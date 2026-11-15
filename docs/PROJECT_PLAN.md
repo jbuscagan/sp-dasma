@@ -63,7 +63,7 @@ See **docs/ARCHITECTURE.md** for the programming method, the folder structure an
 
 1. **Ask for changes against the existing code.** Say "In `config.ts`, add …" or "On the Published page, …". Claude edits only the affected files. It does not regenerate the project.
 2. **One sprint = one Git branch = one Vercel Preview link.** Merge to `main` only after you approve. `main` is what users see.
-3. **Database changes** always come as a new numbered file (`supabase/migrations/0003_….sql`) that you run once in Supabase.
+3. **Database changes** are made in the single file `supabase/setup.sql`; after each update you run it again in Supabase (safe to repeat).
 4. **Send real samples:** filled-in reports, scanned letters (with personal details blurred if needed), and the official barangay and organization lists. Real samples prevent guesswork.
 5. **Report bugs** with: page, what you did, what you expected, a screenshot.
 
@@ -129,6 +129,10 @@ See **docs/ARCHITECTURE.md** for the programming method, the folder structure an
 - Database normalized (0009): organization, barangay and receiving office stored once and linked by id; budget and publish permissions in one place each. Requests are read and saved through the view `entry_list`.
 - Code: transmittal data calls split by topic (`transmittal/api/`), Admin split into one file per tab, Published (All) split into parts, table names in `lib/db.ts`.
 - Barangays can be renamed in Admin (changes every record at once); a barangay in use cannot be deleted.
+
+### Sprint 7 — one database file (done)
+- The 10 numbered SQL files were replaced by `supabase/setup.sql`: one file that creates or repairs the whole database and is safe to run again (re-running the old files had broken a few rules).
+- Removed an old step that broke renaming organizations.
 
 ## 6. Suggested improvements (for your decision)
 

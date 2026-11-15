@@ -1,6 +1,6 @@
 // Names of the database tables / views the app talks to — one place to change them.
 //
-// Requests are read and written through the view "entry_list" (see supabase/migrations/0009_normalize.sql):
+// Requests are read and written through the view "entry_list" (see supabase/setup.sql):
 // the table "entries" stores only ids for organization, barangay and receiving office, and the view
 // shows their names. Saving a name through the view links it to the right record automatically.
 export const T = {

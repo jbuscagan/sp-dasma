@@ -31,7 +31,7 @@ Next.js 15 (React 19, TypeScript, Tailwind) on **Vercel** · **Supabase** (Postg
 | Change budget reports | `src/features/budget/` (`ledger.ts` = SP contribution printout) |
 | Change the menu | `src/features/shell/nav.ts` |
 | Change colours | `src/app/globals.css` (CSS variables) |
-| Change the database | add `supabase/migrations/000N_description.sql` |
+| Change the database | edit `supabase/setup.sql` (keep every statement safe to run again) |
 
 ## Commands
 ```bash

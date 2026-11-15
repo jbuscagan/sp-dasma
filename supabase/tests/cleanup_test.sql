@@ -1,4 +1,4 @@
--- Checks for 0010 (organization only / barangay only, received by, weekly dates). Run after rls_test_0010_setup.sql and 0010.
+-- Organization only / barangay only, "Received by", weekly dates. Run after cleanup_test_data.sql and setup.sql again.
 create or replace function pg_temp.as_user(uid text) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claim.sub', uid, false);

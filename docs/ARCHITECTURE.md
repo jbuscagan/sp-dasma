@@ -40,7 +40,7 @@ src/
   components/ui/       shared building blocks (Button, Modal, Icon, Combobox …)
   lib/                 shared helpers: db.ts (table names), format.ts (phone/name/date), dates.ts, types.ts
   hooks/               shared React helpers (live data, drag-to-reorder)
-supabase/migrations/   numbered database changes (never edit an old one; add a new number)
+supabase/setup.sql     THE database: tables, rules, security, storage — one file, safe to run again
 supabase/tests/        database security checks
 docs/                  this guide, deployment steps, project plan
 ```
@@ -72,7 +72,7 @@ audit_log (activity log, written only by the database)
 
 `──<` means "one … has many …".
 
-### What 0009 changed
+### What changed when the data was normalized
 
 | Before | After |
 |---|---|

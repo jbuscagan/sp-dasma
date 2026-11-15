@@ -39,20 +39,12 @@ This sets up all the "drawers" of the filing cabinet.
 
 1. On the left menu, click **SQL Editor** (the icon looks like `>_`).
 2. Click **+ New query**.
-3. In the project folder, open `supabase/migrations/0001_init.sql`. Select everything (**Ctrl+A**), copy it (**Ctrl+C**), paste it into Supabase (**Ctrl+V**), then click the green **Run** button.
+3. In the project folder, open **`supabase/setup.sql`** (the only database file). Select everything (**Ctrl+A**), copy it (**Ctrl+C**), paste it into Supabase (**Ctrl+V**), then click the green **Run** button.
    ✅ It should say **"Success. No rows returned."**
-4. Do the same for the other files, **in this order**, each in a **new query** (10 files in total). Files 0005 to 0010 are safe to run again if you are unsure whether you already ran them:
-   - `0002_seed_barangays.sql` (the 75 barangays)
-   - `0003_sprint2_budget_privacy.sql` (budget module, personal-request privacy)
-   - `0004_seed_organizations.sql` (starter list of organizations)
-   - `0005_sprint3_workflow.sql` (Submit / Publish / lock, received by, ordering)
-   - `0006_sprint4_orgs_permissions_audit.sql` (one record per organization, office permissions, activity log; also fixes "column entries.position does not exist")
-   - `0007_sprint5_publish_permissions_logo.sql` (weekly published lists, office Budget / Publish permissions, city logo storage)
-   - `0008_publish_uses_edit_permission.sql` (one office permission for edit / delete / publish)
-   - `0009_normalize.sql` (every name stored once and linked by id — see docs/ARCHITECTURE.md)
-   - `0010_org_barangay_cleanup.sql` (organization only / barangay only, "Received by" = SPM name, weekly list dates)
 
-❗ If you see a red error, stop and send me a screenshot. Do not run the same file twice.
+That's all for the database. `setup.sql` is **safe to run again** at any time: it never deletes your records, it only adds what is missing and brings every rule back to the current version.
+
+❗ If you see a red error, stop and send me a screenshot.
 
 ### 1.3 Copy the two "keys" the website needs
 1. Left menu → **Project Settings** (gear icon) → **API** (it may be called **Data API** / **API Keys**).
@@ -156,7 +148,7 @@ This makes the confirmation emails open your website instead of a broken page.
 
 Do these two things every time you receive a new version (`sp-dasma.zip`):
 
-**1. Database (only when the update includes a new SQL file).** Supabase → **SQL Editor** → **New query** → paste the new file (for this update: `supabase/migrations/0010_org_barangay_cleanup.sql`; run `0007_…`, `0008_…` and `0009_…` first if you have not run them yet) → **Run**. It is safe to run more than once.
+**1. Database.** Supabase → **SQL Editor** → **New query** → paste the whole **`supabase/setup.sql`** → **Run** → "Success". Do this with every update; it is safe to run again and again (your records are kept).
 
 **2. Code — upload in 3 batches** (GitHub accepts at most 100 files per upload, and `src` has a few more). Extract the zip first. Dragging works for folders; the "choose your files" button only takes files.
 
@@ -183,7 +175,7 @@ Uploading replaces the old files. Vercel rebuilds after each commit (about 2 min
 2. Open GitHub Desktop: it lists what changed. Type a summary (e.g. `Sprint 4 update`) → **Commit to main** → **Push origin**.
 3. Vercel sees the change and updates the website in about 2 minutes.
 
-**Database changes:** if an update includes a new file such as `supabase/migrations/0006_….sql`, run it **once** in the Supabase **SQL Editor** (like Part 1.2) **before** the website update goes live.
+**Database changes:** run `supabase/setup.sql` again in the Supabase **SQL Editor** (like Part 1.2) **before** the website update goes live. It is the only database file and is safe to run any number of times.
 
 ## Common problems
 
@@ -193,7 +185,7 @@ Uploading replaces the old files. Vercel rebuilds after each commit (about 2 min
 | Confirmation email opens a page that doesn't load | Do Part 4 again: Site URL and Redirect URLs. |
 | Stuck on "Waiting for approval" | An admin must click **Approve** *and* choose an office in **Admin → Accounts**. |
 | Changes made by other committees don't appear by themselves | Make sure all four SQL files ran successfully (Part 1.2). |
-| Photo or e-signature upload fails | Supabase → **Storage**: there should be two buckets, `attachments` and `signatures`. If missing, file `0001_init.sql` didn't finish. Send me a screenshot. |
+| Photo or e-signature upload fails | Supabase → **Storage**: there should be two buckets, `attachments` and `signatures`. If missing, run `supabase/setup.sql` again. Send me a screenshot. |
 | DTR text not lined up after printing | Print at **100 % / Actual size** (not "Fit to page"). Then use **DTR → Rules & settings → Advanced calibration**. |
 
 ## Glossary

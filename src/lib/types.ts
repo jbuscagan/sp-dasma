@@ -1,4 +1,4 @@
-// Shapes of the database rows (mirror of supabase/migrations/0001_init.sql).
+// Shapes of the database rows (mirror of supabase/setup.sql).
 
 export type TransmittalType = 'ngo' | 'christmas' | 'barangay' | 'sk' | 'medical' | 'personal';
 /** draft → submitted (daily) → transmitted (= PUBLISHED for the week, locked) → archived */

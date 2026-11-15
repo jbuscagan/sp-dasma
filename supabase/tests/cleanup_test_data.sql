@@ -1,4 +1,4 @@
--- Run AFTER 0009 and BEFORE 0010: creates the kind of mixed-up data 0010 must clean.
+-- Creates mixed-up organization/barangay names; then run setup.sql again (its tidy-up must clean them) and cleanup_test.sql.
 -- an earlier test renamed it
 update barangays set name = 'Zone I' where name = 'Zone I (Pob.)';
 alter table entries disable trigger user;
