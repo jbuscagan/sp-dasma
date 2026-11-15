@@ -4,9 +4,9 @@
 //  • scanned PDFs and photos: each page is cleaned up (grey, more contrast, enlarged) and read with OCR,
 //  • pages are grouped into letters, and fields are guessed with a confidence for each.
 // Everything runs in the browser; nothing is sent to an outside service.
-import { extractLetter, splitPages, type Confidence, type Extracted, type Guess } from './extract';
+import { detectLetterType, extractLetter, splitPages, type Confidence, type Extracted, type Guess } from './extract';
 import { itemsToText, pageTextItems } from './pdfText';
-import { detectTransmittalType, parseTransmittalPage, splitOrgBarangay } from './tableParse';
+import { detectTransmittalType, parseTablePage, splitOrgBarangay, type Columns } from './tableParse';
 import type { TransmittalType } from '@/lib/types';
 
 export interface ScanDoc {
@@ -120,7 +120,7 @@ async function openPdf(file: File) {
 
 export async function processFiles(
   files: File[],
-  ctx: { barangays: string[]; orgs: string[]; medical: boolean; type?: TransmittalType },
+  ctx: { barangays: string[]; orgs: string[]; medical: boolean; type?: TransmittalType; onePerPage?: boolean },
   onProgress: (p: Progress) => void,
 ): Promise<ScanDoc[]> {
   const docs: ScanDoc[] = [];
@@ -133,7 +133,10 @@ export async function processFiles(
     onProgress({ step: `Opening ${f.name}…`, done: fi, total: files.length });
     if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
       const pdf = await openPdf(f);
+      let carry: Columns | null = null; // column positions of the previous page (long lists)
+      let fileType: TransmittalType | null = null;
       for (let p = 1; p <= pdf.numPages; p++) {
+        onProgress({ step: `Opening ${f.name} (page ${p} of ${pdf.numPages})…`, done: fi, total: files.length });
         const page = await pdf.getPage(p);
         const items = await pageTextItems(page);
         const vp = page.getViewport({ scale: 1 });
@@ -149,11 +152,16 @@ export async function processFiles(
         const text = itemsToText(items);
         if (text.replace(/\s/g, '').length > 40) {
           // digital page: a prepared transmittal table → one document per row; otherwise a letter
-          const rows = parseTransmittalPage(items);
-          const detectedType = detectTransmittalType(text.slice(0, 600));
+          const parsed = parseTablePage(items, carry);
+          carry = parsed.columns;
+          const rows = parsed.rows;
+          const detectedType: TransmittalType | null = detectTransmittalType(text.slice(0, 600)) ?? fileType;
+          fileType = detectedType;
           if (rows.length) {
             rows.forEach((r, ri) => {
-              const ob = r.orgBarangay ? splitOrgBarangay(r.orgBarangay, ctx.barangays) : { organization: '', barangay: '' };
+              // organization only / barangay only, whichever column it came from
+              const ob = splitOrgBarangay(r.orgBarangay ?? r.organization ?? '', ctx.barangays);
+              const brgy = r.barangay ? splitOrgBarangay(r.barangay, ctx.barangays) : { organization: '', barangay: '' };
               docs.push({
                 key: `${fi}-${p}-${ri}`,
                 source: 'table',
@@ -166,8 +174,8 @@ export async function processFiles(
                 include: !detectedType || !ctx.type || detectedType === ctx.type,
                 fields: {
                   name: high(ctx.medical ? r.patient_name || r.solicitor_name || '' : r.solicitor_name || ''),
-                  organization: high(r.organization ?? ob.organization),
-                  barangay: high(r.barangay ?? ob.barangay),
+                  organization: high(ob.organization || brgy.organization),
+                  barangay: high(brgy.barangay || ob.barangay || (r.barangay ?? '')),
                   request: high(r.request ?? ''),
                   purpose: high(r.purpose ?? ''),
                   dateReceived: high(r.date_received ?? ''),
@@ -178,8 +186,14 @@ export async function processFiles(
                 solicitor: ctx.medical && r.patient_name ? r.solicitor_name : undefined,
               });
             });
-          } else letterPages.push({ seq: pageSeq, fileIndex: fi, label, thumb, text });
-        } else toOcr.push({ seq: pageSeq, fileIndex: fi, label, canvas, thumb });
+          } else {
+            carry = null;
+            letterPages.push({ seq: pageSeq, fileIndex: fi, label, thumb, text });
+          }
+        } else {
+          carry = null;
+          toOcr.push({ seq: pageSeq, fileIndex: fi, label, canvas, thumb });
+        }
       }
     } else if (f.type.startsWith('image/')) {
       const canvas = await fileToCanvas(f);
@@ -207,11 +221,21 @@ export async function processFiles(
     }
   }
 
-  // 3. group pages into letters and guess the fields
+  // 3. group pages into letters and guess the fields.
+  //    Every photo is its own letter. Pages of one PDF are joined only when a page clearly continues
+  //    the previous one (no greeting/date at the top and no closing before it) — or never, when
+  //    "every page is a separate request" was chosen.
   letterPages.sort((a, b) => a.seq - b.seq);
-  const groups = splitPages(letterPages.map((p) => p.text));
-  groups.forEach((g, gi) => {
-    const pages = g.map((i) => letterPages[i]);
+  const groups: PageRead[][] = [];
+  const byFile = new Map<number, PageRead[]>();
+  letterPages.forEach((pg) => byFile.set(pg.fileIndex, [...(byFile.get(pg.fileIndex) ?? []), pg]));
+  byFile.forEach((pages, fi) => {
+    const isPdf = /\.pdf$/i.test(files[fi].name) || files[fi].type === 'application/pdf';
+    if (!isPdf || ctx.onePerPage || pages.length === 1) pages.forEach((pg) => groups.push([pg]));
+    else splitPages(pages.map((pg) => pg.text)).forEach((g) => groups.push(g.map((i) => pages[i])));
+  });
+  groups.sort((a, b) => a[0].seq - b[0].seq);
+  groups.forEach((pages, gi) => {
     const text = pages.map((p) => p.text).join('\n\n');
     docs.push({
       key: `L${gi}`,
@@ -221,6 +245,7 @@ export async function processFiles(
       thumbs: pages.map((p) => p.thumb),
       text,
       include: true,
+      detectedType: detectLetterType(text),
       fields: extractLetter(text, ctx),
     });
   });

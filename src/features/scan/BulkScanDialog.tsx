@@ -8,11 +8,11 @@ import { EventDateInput } from '@/components/ui/EventDateInput';
 import { Icon } from '@/components/ui/Icon';
 import { useSession } from '@/features/auth/session';
 import { useDirectory } from '@/features/directory/useDirectory';
-import { listEntries, saveEntry, uploadAttachment } from '@/features/transmittal/api';
+import { listEntries, saveEntry, setReceived, uploadAttachment } from '@/features/transmittal/api';
 import { MEDICAL_PURPOSE_OPTIONS, PURPOSE_OPTIONS, REQUEST_OPTIONS, TYPES } from '@/features/transmittal/config';
 import { todayIso } from '@/lib/dates';
 import type { Entry, EntryInput, TransmittalType } from '@/lib/types';
-import { batchDuplicates, findDuplicate } from './duplicates';
+import { batchDuplicates, findDuplicateEntry } from './duplicates';
 import type { Confidence, Extracted } from './extract';
 import { CONFIDENCE_STYLE, processFiles, type Progress, type ScanDoc } from './process';
 
@@ -44,6 +44,8 @@ export function BulkScanDialog({
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<ScanDoc | null>(null);
+  const [onePerPage, setOnePerPage] = useState(false); // multi-page PDF: every page is its own request
+  const [addAnyway, setAddAnyway] = useState<Set<string>>(new Set()); // duplicates the user still wants as new rows
 
   const reset = () => {
     setFiles([]);
@@ -51,6 +53,7 @@ export function BulkScanDialog({
     setStep('pick');
     setProgress(null);
     setError('');
+    setAddAnyway(new Set());
   };
   const close = () => {
     if (step === 'working') return;
@@ -63,7 +66,7 @@ export function BulkScanDialog({
     setError('');
     try {
       const [found, ex] = await Promise.all([
-        processFiles(files, { barangays: dir.barangays, orgs: dir.orgs.map((o) => o.name), medical, type: onConfirm ? undefined : type }, setProgress),
+        processFiles(files, { barangays: dir.barangays, orgs: dir.orgs.map((o) => o.name), medical, type: onConfirm ? undefined : type, onePerPage }, setProgress),
         listEntries({ status: ['draft', 'submitted', 'transmitted'] }).catch(() => [] as Entry[]),
       ]);
       setExisting(ex);
@@ -88,10 +91,28 @@ export function BulkScanDialog({
 
   const dupInputs = docs.map((d) => ({ name: d.fields.name.value, organization: d.fields.organization.value, contact: d.fields.contact.value, dateReceived: d.fields.dateReceived.value }));
   const inBatch = batchDuplicates(dupInputs);
-  const dupOf = (i: number) => findDuplicate(dupInputs[i], existing, (id) => committeeName(id)) ?? (inBatch.has(i) ? `Same as row ${inBatch.get(i)! + 1} of this upload` : null);
+
+  /**
+   * What happens to each scanned request:
+   *  • new   — added to the table as a draft
+   *  • tick  — the solicitor is already in this office's list: that record is ticked as received instead of added again
+   *  • same  — the same request appears earlier in this upload: added once, and ticked as received
+   *  • other — looks like a request of another office (shown as a warning; added unless unticked)
+   */
+  type Plan = { kind: 'new' } | { kind: 'tick'; entry: Entry } | { kind: 'same'; first: number } | { kind: 'other'; entry: Entry };
+  const plans: Plan[] = docs.map((d, i) => {
+    if (onConfirm || addAnyway.has(d.key)) return { kind: 'new' };
+    const e = findDuplicateEntry(dupInputs[i], existing);
+    if (e && e.committee_id === committee?.id && e.type === type) return { kind: 'tick', entry: e };
+    if (inBatch.has(i)) return { kind: 'same', first: inBatch.get(i)! };
+    if (e) return { kind: 'other', entry: e };
+    return { kind: 'new' };
+  });
 
   const chosen = docs.filter((d) => d.include);
-  const blocked = chosen.filter((d) => missing(d).length);
+  const chosenNew = docs.filter((d, i) => d.include && (plans[i].kind === 'new' || plans[i].kind === 'other'));
+  const chosenTick = docs.filter((d, i) => d.include && (plans[i].kind === 'tick' || plans[i].kind === 'same'));
+  const blocked = chosenNew.filter((d) => missing(d).length);
 
   const save = async () => {
     if (!committee) return;
@@ -106,7 +127,9 @@ export function BulkScanDialog({
         return;
       }
       const paths = new Map<number, string>(); // upload each original file once
-      for (const d of chosen) {
+      const created = new Map<number, string>(); // doc index → new record id
+      for (const [i, d] of docs.entries()) {
+        if (!d.include || !(plans[i].kind === 'new' || plans[i].kind === 'other')) continue;
         if (!paths.has(d.fileIndex)) {
           const f = files[d.fileIndex];
           paths.set(d.fileIndex, await uploadAttachment(f, committee.id, f.name.split('.').pop() || 'jpg'));
@@ -130,9 +153,22 @@ export function BulkScanDialog({
           assistance_status: 'pending',
           attachment_paths: [paths.get(d.fileIndex)!],
         };
-        await saveEntry(input);
+        created.set(i, (await saveEntry(input)).id);
       }
-      onSaved(chosen.length);
+      // Already there → tick as received (no second copy)
+      const tick = new Set<string>();
+      docs.forEach((d, i) => {
+        const p = plans[i];
+        if (!d.include) return;
+        if (p.kind === 'tick') tick.add(p.entry.id);
+        if (p.kind === 'same') {
+          const first = plans[p.first];
+          const id = first.kind === 'tick' ? first.entry.id : created.get(p.first);
+          if (id) tick.add(id);
+        }
+      });
+      if (tick.size) await setReceived(Array.from(tick), true, committee.id);
+      onSaved(created.size);
       reset();
       onClose();
     } catch (e) {
@@ -175,11 +211,11 @@ export function BulkScanDialog({
         step === 'review' ? (
           <>
             <span className="mr-auto self-center text-sm text-muted">
-              {chosen.length} of {docs.length} selected{blocked.length ? ` · ${blocked.length} missing required fields` : ''}
+              {chosenNew.length} new{chosenTick.length ? ` · ${chosenTick.length} already in the list (ticked as received)` : ''}{blocked.length ? ` · ${blocked.length} missing required fields` : ''}
             </span>
             <Button variant="secondary" onClick={reset}>Start over</Button>
             <Button busy={saving} disabled={!chosen.length || blocked.length > 0} onClick={save}>
-              Add {chosen.length} {onConfirm ? 'row(s)' : 'to the table'}
+              {onConfirm ? `Add ${chosen.length} row(s)` : chosenNew.length ? `Add ${chosenNew.length} to the table` : 'Tick as received'}
             </Button>
           </>
         ) : (
@@ -222,6 +258,10 @@ export function BulkScanDialog({
               ))}
             </ul>
           )}
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-brand-600" checked={onePerPage} onChange={(e) => setOnePerPage(e.target.checked)} />
+            <span>Every page of a PDF is a separate request <span className="text-muted">(tick this for a PDF of many one-page letters; photos are always one request each)</span></span>
+          </label>
           <p className="text-xs text-muted">
             Tips for better reading: flat page, good light, no shadows, whole page in the photo. Typed letters read well; handwriting is often misread, so always check names and numbers.
           </p>
@@ -263,7 +303,7 @@ export function BulkScanDialog({
                   </thead>
                   <tbody>
                     {docs.map((d, i) => {
-                      const dup = dupOf(i);
+                      const plan = plans[i];
                       return (
                         <tr key={d.key} className={`border-t border-line align-top ${d.include ? '' : 'opacity-50'}`}>
                           <td className="px-2 py-2"><input type="checkbox" className="h-4 w-4 accent-brand-600" checked={d.include} onChange={() => toggle(d.key)} aria-label="Add this request" /></td>
@@ -277,11 +317,32 @@ export function BulkScanDialog({
                           {cols.map((c) => <td key={c.k} className={`px-1 py-1 ${c.w}`}>{cellInput(d, c)}</td>)}
                           <td className="min-w-[140px] px-2 py-1 text-xs">
                             {!onConfirm && d.detectedType && d.detectedType !== type && (
-                              <div className="mb-1"><Badge color="blue">From a {TYPES[d.detectedType].label} transmittal</Badge><div className="mt-0.5 text-[11px] text-muted">Import it on the {TYPES[d.detectedType].label} page</div></div>
+                              <div className="mb-1">
+                                <Badge color="blue">{d.source === 'table' ? `From a ${TYPES[d.detectedType].label} transmittal` : `Looks like ${TYPES[d.detectedType].label}`}</Badge>
+                                <div className="mt-0.5 text-[11px] text-muted">{d.source === 'table' ? `Import it on the ${TYPES[d.detectedType].label} page` : `Check the category — it may belong on the ${TYPES[d.detectedType].label} page`}</div>
+                              </div>
                             )}
-                            {dup && <Badge color="amber" title={dup}><Icon name="alert" size={11} />Possible duplicate</Badge>}
-                            {dup && <div className="mt-0.5 text-[11px] text-muted">{dup}</div>}
-                            {missing(d).length > 0 && d.include && <div className="mt-1 text-[11px] text-red-600">Fill in required fields or untick</div>}
+                            {plan.kind === 'tick' && (
+                              <div>
+                                <Badge color="green"><Icon name="check" size={11} />Already in your list</Badge>
+                                <div className="mt-0.5 text-[11px] text-muted">{plan.entry.patient_name || plan.entry.solicitor_name} ({plan.entry.date_received}) will be ticked as received — not added twice.</div>
+                                <button type="button" className="mt-0.5 text-[11px] text-brand-600 hover:underline" onClick={() => setAddAnyway((s) => new Set(s).add(d.key))}>Add as a new request instead</button>
+                              </div>
+                            )}
+                            {plan.kind === 'same' && (
+                              <div>
+                                <Badge color="green"><Icon name="check" size={11} />Repeated in this upload</Badge>
+                                <div className="mt-0.5 text-[11px] text-muted">Same as {docs[plan.first]?.fields.name.value || 'an earlier row'} above — added once and ticked as received.</div>
+                                <button type="button" className="mt-0.5 text-[11px] text-brand-600 hover:underline" onClick={() => setAddAnyway((s) => new Set(s).add(d.key))}>Add both</button>
+                              </div>
+                            )}
+                            {plan.kind === 'other' && (
+                              <div>
+                                <Badge color="amber"><Icon name="alert" size={11} />Possible duplicate</Badge>
+                                <div className="mt-0.5 text-[11px] text-muted">Looks like {plan.entry.patient_name || plan.entry.solicitor_name} ({plan.entry.date_received}, {committeeName(plan.entry.committee_id)})</div>
+                              </div>
+                            )}
+                            {missing(d).length > 0 && d.include && (plan.kind === 'new' || plan.kind === 'other') && <div className="mt-1 text-[11px] text-red-600">Fill in required fields or untick</div>}
                           </td>
                         </tr>
                       );

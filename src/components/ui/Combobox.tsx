@@ -1,6 +1,10 @@
 'use client';
 // Type-ahead dropdown: shows matching suggestions (with an arrow to open the full list) but always accepts
 // whatever the user types. The list floats above the page, so it is never cut off inside scrolling tables.
+//  • The list opens when you type, click the arrow, or press ↓ — not just by moving into the cell,
+//    so it never covers the cells below while you move around the table.
+//  • Opening it on a cell that already has a value shows ALL choices (to switch to another one);
+//    only what you type filters the list.
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AutoTextarea } from './AutoTextarea';
@@ -48,7 +52,7 @@ export function Combobox<T>({
   multiline?: boolean; // wraps long text onto more lines (used inside tables)
 }) {
   const [open, setOpen] = useState(false);
-  const [all, setAll] = useState(false); // arrow clicked: show the whole list, not only matches
+  const [typed, setTyped] = useState(false); // filter only by what was typed since the list opened
   const [active, setActive] = useState(0);
   const [rect, setRect] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null);
   const input = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
@@ -57,10 +61,27 @@ export function Combobox<T>({
   const Field = (multiline ? AutoTextarea : 'input') as unknown as React.ElementType;
 
   const matches = useMemo(() => {
-    const words = all ? [] : value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const words = typed ? value.trim().toLowerCase().split(/\s+/).filter(Boolean) : [];
     const found = words.length ? options.filter((o) => words.every((w) => `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(w))) : options;
     return found.slice(0, maxShown);
-  }, [value, options, maxShown, all]);
+  }, [value, options, maxShown, typed]);
+
+  const openList = () => {
+    setTyped(false);
+    // start on the current value, so Enter keeps it and arrows move from it
+    const at = options.findIndex((o) => o.value === value);
+    setActive(at >= 0 && at < maxShown ? at : 0);
+    setOpen(true);
+  };
+  const closeList = () => {
+    setOpen(false);
+    setTyped(false);
+  };
+
+  // keep the highlighted choice visible
+  useEffect(() => {
+    if (open) list.current?.children[active]?.scrollIntoView({ block: 'nearest' });
+  }, [open, active]);
 
   // Position the floating list under (or above) the input.
   useLayoutEffect(() => {
@@ -84,10 +105,7 @@ export function Combobox<T>({
     if (!open) return;
     const close = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (!input.current?.parentElement?.contains(t) && !list.current?.contains(t)) {
-        setOpen(false);
-        setAll(false);
-      }
+      if (!input.current?.parentElement?.contains(t) && !list.current?.contains(t)) closeList();
     };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
@@ -97,8 +115,7 @@ export function Combobox<T>({
     onChange(o.value);
     onPick?.(o);
     onCommit?.(o.value);
-    setOpen(false);
-    setAll(false);
+    closeList();
   };
 
   return (
@@ -116,19 +133,24 @@ export function Combobox<T>({
         aria-expanded={open}
         aria-controls={listId}
         autoComplete="off"
-        onFocus={() => setOpen(true)}
         onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
           if (list.current?.contains(e.relatedTarget as Node)) return;
+          closeList();
           onCommit?.(e.target.value);
         }}
         onPaste={onPaste}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           onChange(e.target.value);
           setOpen(true);
-          setAll(false);
+          setTyped(true);
           setActive(0);
         }}
         onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+          if (!open && e.key === 'ArrowDown' && !e.altKey) {
+            e.preventDefault();
+            openList();
+            return;
+          }
           if (open && matches.length) {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
@@ -140,14 +162,13 @@ export function Combobox<T>({
               setActive((a) => Math.max(a - 1, 0));
               return;
             }
-            if (e.key === 'Enter' && value.trim() && matches[active] && matches[active].value !== value) {
+            if (e.key === 'Enter' && matches[active] && matches[active].value !== value && (typed ? value.trim() : true)) {
               e.preventDefault();
               pick(matches[active]);
               return;
             }
           }
-          if (e.key === 'Escape') setOpen(false);
-          if (e.key === 'Tab' || e.key === 'Enter') setOpen(false);
+          if (e.key === 'Escape' || e.key === 'Tab' || e.key === 'Enter') closeList();
           onKeyDown?.(e);
         }}
       />
@@ -159,8 +180,8 @@ export function Combobox<T>({
           className="absolute inset-y-0 right-0 flex w-7 items-center justify-center text-muted hover:text-brand-600"
           onMouseDown={(e) => {
             e.preventDefault();
-            setAll((a) => !(open && a));
-            setOpen((o) => !(o && all));
+            if (open) closeList();
+            else openList();
             input.current?.focus();
           }}
         >

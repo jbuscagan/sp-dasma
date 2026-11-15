@@ -17,7 +17,8 @@ import { useSession } from '@/features/auth/session';
 import { useDirectory } from '@/features/directory/useDirectory';
 import type { Reorder } from '@/hooks/useReorder';
 import { fmtLong, parseDateText, todayIso } from '@/lib/dates';
-import { canonical, formatName, formatPhone } from '@/lib/format';
+import { canonical, formatName, formatPhone, officeShortName } from '@/lib/format';
+import { splitOrgBarangay } from '@/features/scan/tableParse';
 import type { Entry, EntryInput, Transmittal, TransmittalType } from '@/lib/types';
 import { patchEntry, saveEntry } from './api';
 import { needsDetails, TYPES, type FieldDef } from './config';
@@ -157,11 +158,28 @@ export function TransmittalSheet({
   };
 
   // ---------- editing an existing row ----------
+  /**
+   * Organization = organization only, barangay = barangay only:
+   * "KBDM - Salitran IV" typed in either box becomes KBDM + Salitran IV (the barangay is filled only if empty).
+   */
+  const placeSplit = (key: string, value: string, currentBarangay: string): Record<string, string | null> => {
+    if (key === 'organization' && value) {
+      const s = splitOrgBarangay(value, dir.barangays);
+      if (!s.barangay) return {};
+      return { organization: s.organization || null, ...(currentBarangay.trim() ? {} : { barangay: s.barangay }) };
+    }
+    if (key === 'barangay' && value && !dir.barangays.includes(value)) {
+      const s = splitOrgBarangay(value, dir.barangays);
+      if (s.barangay && s.organization) return { barangay: s.barangay, organization: s.organization };
+    }
+    return {};
+  };
+
   const commitCell = async (e: Entry, f: FieldDef | null, key: string, raw: string) => {
     const value = f ? clean(f, raw) : raw.trim();
     const old = String((e as unknown as Record<string, unknown>)[key] ?? '');
     if (old === value) return;
-    const patch: Record<string, unknown> = { [key]: value || null };
+    const patch: Record<string, unknown> = { [key]: value || null, ...placeSplit(key, value, e.barangay ?? '') };
     if (key === 'assistance_status' && value !== 'received') patch.assistance_date = null;
     try {
       await patchEntry(e.id, patch as EntryInput);
@@ -244,7 +262,7 @@ export function TransmittalSheet({
     <td key="received-by" className="border-l border-line px-1.5 py-1.5 align-top text-xs">
       {checked ? (
         <span title={e.received_at ? `Received ${fmtLong(e.received_at)}` : undefined} className="font-semibold text-brand-700">
-          {e.received_by || committee?.name || committeeName(e.committee_id)}
+          {e.received_by || officeShortName(committee)}
         </span>
       ) : null}
     </td>
@@ -372,7 +390,11 @@ export function TransmittalSheet({
                     dataCell: `new-${pi}-${ci}`,
                     invalid: missing[pi]?.includes(String(f.key)),
                     onChange: (v) => setPendingCell(pi, String(f.key), v),
-                    onCommit: (v) => setPendingCell(pi, String(f.key), clean(f, v)),
+                    onCommit: (v) => {
+                      const value = clean(f, v);
+                      const extra = placeSplit(String(f.key), value, r.barangay ?? '');
+                      setPending((list) => list.map((row, i) => (i === pi ? { ...row, [f.key]: value, ...Object.fromEntries(Object.entries(extra).map(([k, x]) => [k, x ?? ''])) } : row)));
+                    },
                     onPaste: (ev) => onPaste(ev, pi, ci),
                     onKeyDown: (ev) => {
                       if (ev.key !== 'Enter') return;

@@ -46,6 +46,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
   );
   const order = useLive(getEntryOrder, ['entry_order']);
   const tx = useLive(() => listTransmittals(), ['transmittals']);
+  const txDate = useMemo(() => new Map((tx.data ?? []).map((t) => [t.id, t.transmitted_on])), [tx.data]);
   const revisionOpen = useMemo(() => new Set((tx.data ?? []).filter((t) => t.revision_open).map((t) => t.id)), [tx.data]);
 
   // My office's arrangement first, then everything else by date received.
@@ -258,6 +259,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
         <PublishDialog
           rows={targetRows}
           selectedCount={chosen.length}
+          transmittedOn={(e) => (e.transmittal_id ? txDate.get(e.transmittal_id) ?? null : null)}
           onClose={() => setPublishing(false)}
           onDone={() => {
             setPublishing(false);

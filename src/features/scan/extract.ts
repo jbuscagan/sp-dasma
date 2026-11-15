@@ -4,6 +4,8 @@
 // Pure functions (no browser / database) so they can be unit-tested.
 // ============================================================================
 import { iso } from '@/lib/dates';
+import type { TransmittalType } from '@/lib/types';
+import { splitOrgBarangay as splitPlace } from './tableParse';
 
 export type Confidence = 'high' | 'medium' | 'low' | 'none';
 
@@ -230,10 +232,19 @@ export function extractLetter(text: string, ctx: { barangays: string[]; orgs: st
     dates.find((d) => /\b(on|held|scheduled|happen|celebrat|gaganapin|sa darating na)\b[^\n]{0,40}$/i.test(clean.slice(Math.max(0, d.index - 50), d.index))) ??
     dates.find((d) => d !== letterDate && d.iso >= (letterDate?.iso ?? ''));
 
+  // Organization = organization only, barangay = barangay only ("KBDM of Brgy. Salitran IV" → KBDM + Salitran IV).
+  let organization = findOrganization(clean, ctx.orgs);
+  let barangay = findBarangay(clean, ctx.barangays);
+  const split = splitPlace(organization.value, ctx.barangays);
+  if (split.barangay) {
+    organization = split.organization ? { ...organization, value: split.organization } : none;
+    if (!barangay.value) barangay = { value: split.barangay, confidence: 'medium' };
+  }
+
   return {
     name: findName(clean),
-    organization: findOrganization(clean, ctx.orgs),
-    barangay: findBarangay(clean, ctx.barangays),
+    organization,
+    barangay,
     request: findRequest(clean),
     purpose: findPurpose(clean, ctx.medical),
     dateReceived: letterDate ? { value: letterDate.iso, confidence: 'medium' } : none,
@@ -263,4 +274,22 @@ export function splitPages(pages: string[]): number[][] {
     else groups[groups.length - 1].push(i);
   });
   return groups;
+}
+
+// ---------------------------------------------------------------- which transmittal a letter belongs to
+
+const TYPE_HINTS: [TransmittalType, RegExp][] = [
+  ['medical', /\b(hospital|confine[d]?|diagnos|patient|medicine|medical assistance|dialysis|chemo|laboratory|operation|surgery|hospital bill|maintenance medicine|gamot|ospital)\b/i],
+  ['sk', /\b(sangguniang kabataan|sk (chair|chairman|chairperson|council|federation|kagawad|officials?)|sk ng barangay|katipunan ng kabataan)\b/i],
+  ['christmas', /\b(christmas party|christmas celebration|paskuhan|pamaskong|christmas gift|yuletide)\b/i],
+  ['barangay', /\b(punong barangay|sangguniang barangay|barangay council|barangay captain|kapitan ng barangay|barangay hall|office of the punong barangay)\b/i],
+];
+
+/**
+ * Best guess of the kind of request a scanned letter is (null = cannot tell).
+ * Used only to warn when a letter seems to belong to another transmittal page.
+ */
+export function detectLetterType(text: string): TransmittalType | null {
+  for (const [type, re] of TYPE_HINTS) if (re.test(text)) return type;
+  return null;
 }

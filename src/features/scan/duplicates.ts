@@ -13,6 +13,12 @@ const digits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '').re
 
 /** Returns a short reason when the request probably exists already, otherwise null. */
 export function findDuplicate(d: DupInput, existing: Entry[], committeeName: (id: string) => string): string | null {
+  const e = findDuplicateEntry(d, existing);
+  return e ? `Looks like ${e.patient_name || e.solicitor_name} (${e.date_received}, ${committeeName(e.committee_id)})` : null;
+}
+
+/** The existing request this one matches (same number + name or organization, or same name + organization). */
+export function findDuplicateEntry(d: DupInput, existing: Entry[]): Entry | null {
   const phone = digits(d.contact);
   const name = norm(d.name).trim();
   const org = norm(d.organization).trim();
@@ -20,9 +26,7 @@ export function findDuplicate(d: DupInput, existing: Entry[], committeeName: (id
     const sameName = !!name && (norm(e.solicitor_name ?? '').trim() === name || norm(e.patient_name ?? '').trim() === name);
     const samePhone = phone.length >= 10 && digits(e.contact_number) === phone;
     const sameOrg = !org || norm(e.organization ?? '').trim() === org;
-    if ((samePhone && (sameName || sameOrg)) || (sameName && sameOrg && org)) {
-      return `Looks like ${e.patient_name || e.solicitor_name} (${e.date_received}, ${committeeName(e.committee_id)})`;
-    }
+    if ((samePhone && (sameName || sameOrg)) || (sameName && sameOrg && org)) return e;
   }
   return null;
 }

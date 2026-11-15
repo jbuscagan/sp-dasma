@@ -64,3 +64,10 @@ export function parseDateRange(text: string): { from: string; to: string } {
   const to = m[4] ? iso(m[3] ? mi(m[3]) || m1 : m1, Number(m[4])) : '';
   return { from, to };
 }
+
+/** "Office of SPM Robin Cantimbuhan" → "SPM Robin Cantimbuhan" (used for "Received by"). */
+export function officeShortName(c: { name: string; spm_name?: string | null } | null | undefined): string {
+  if (!c) return '';
+  if (c.spm_name?.trim()) return `SPM ${c.spm_name.trim()}`;
+  return c.name.replace(/^\s*office\s+of\s+(the\s+)?/i, '').trim() || c.name;
+}

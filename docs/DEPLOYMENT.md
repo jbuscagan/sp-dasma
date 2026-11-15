@@ -41,7 +41,7 @@ This sets up all the "drawers" of the filing cabinet.
 2. Click **+ New query**.
 3. In the project folder, open `supabase/migrations/0001_init.sql`. Select everything (**Ctrl+A**), copy it (**Ctrl+C**), paste it into Supabase (**Ctrl+V**), then click the green **Run** button.
    ✅ It should say **"Success. No rows returned."**
-4. Do the same for the other files, **in this order**, each in a **new query** (9 files in total). Files 0005 to 0009 are safe to run again if you are unsure whether you already ran them:
+4. Do the same for the other files, **in this order**, each in a **new query** (10 files in total). Files 0005 to 0010 are safe to run again if you are unsure whether you already ran them:
    - `0002_seed_barangays.sql` (the 75 barangays)
    - `0003_sprint2_budget_privacy.sql` (budget module, personal-request privacy)
    - `0004_seed_organizations.sql` (starter list of organizations)
@@ -50,6 +50,7 @@ This sets up all the "drawers" of the filing cabinet.
    - `0007_sprint5_publish_permissions_logo.sql` (weekly published lists, office Budget / Publish permissions, city logo storage)
    - `0008_publish_uses_edit_permission.sql` (one office permission for edit / delete / publish)
    - `0009_normalize.sql` (every name stored once and linked by id — see docs/ARCHITECTURE.md)
+   - `0010_org_barangay_cleanup.sql` (organization only / barangay only, "Received by" = SPM name, weekly list dates)
 
 ❗ If you see a red error, stop and send me a screenshot. Do not run the same file twice.
 
@@ -155,7 +156,7 @@ This makes the confirmation emails open your website instead of a broken page.
 
 Do these two things every time you receive a new version (`sp-dasma.zip`):
 
-**1. Database (only when the update includes a new SQL file).** Supabase → **SQL Editor** → **New query** → paste the new file (for this update: `supabase/migrations/0009_normalize.sql`; run `0007_…` and `0008_…` first if you have not run them yet) → **Run**. It is safe to run more than once.
+**1. Database (only when the update includes a new SQL file).** Supabase → **SQL Editor** → **New query** → paste the new file (for this update: `supabase/migrations/0010_org_barangay_cleanup.sql`; run `0007_…`, `0008_…` and `0009_…` first if you have not run them yet) → **Run**. It is safe to run more than once.
 
 **2. Code — upload in 3 batches** (GitHub accepts at most 100 files per upload, and `src` has a few more). Extract the zip first. Dragging works for folders; the "choose your files" button only takes files.
 

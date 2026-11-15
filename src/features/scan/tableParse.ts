@@ -47,8 +47,13 @@ function lines(items: TextItem[], tol = 2.5) {
   return out;
 }
 
+export interface Columns {
+  cols: { label: string; field: Field | 'orgBarangay' | 'number' | null; center: number; from: number; to: number }[];
+  headerBottom: number;
+}
+
 /** Finds the header row(s) and returns the column boundaries with their field. */
-function findColumns(items: TextItem[]) {
+function findColumns(items: TextItem[]): Columns | null {
   const ls = lines(items);
   for (let i = 0; i < ls.length; i++) {
     // a header band may wrap over 2–3 lines ("DATE" / "RECEIVED"); wrapped label lines are close
@@ -94,24 +99,39 @@ function findColumns(items: TextItem[]) {
 
 /** One page of a prepared transmittal → rows (empty if the page has no recognizable table). */
 export function parseTransmittalPage(items: TextItem[]): ParsedRow[] {
-  const found = findColumns(items);
-  if (!found) return [];
-  const { cols, headerBottom } = found;
+  return parseTablePage(items).rows;
+}
+
+/**
+ * Like parseTransmittalPage, but also returns the columns it used. Pages 2, 3 … of a long list often
+ * do not repeat the column titles: pass the previous page's columns as `carry` to read them too.
+ */
+export function parseTablePage(items: TextItem[], carry?: Columns | null): { rows: ParsedRow[]; columns: Columns | null } {
+  const own = findColumns(items);
+  const found = own ?? (carry ? { cols: carry.cols, headerBottom: -Infinity } : null);
+  if (!found) return { rows: [], columns: null };
+  const { cols } = found;
+  let headerBottom = found.headerBottom;
   const numberCol = cols.find((c) => c.field === 'number');
   const dateCol = cols.find((c) => c.field === 'date_received');
   const body = items.filter((i) => i.y > headerBottom + 1 && clean(i.str));
 
-  // A row starts where the "#" column has a number (or the date-received column has a date).
+  // A row starts where the "#" column has a number ("1" or "1.") — or, without a "#" column,
+  // where the date-received column has a date.
   const starts = body
     .filter((i) => {
       const cx = i.x + i.w / 2;
-      if (numberCol && cx >= numberCol.from && cx < numberCol.to) return /^\d{1,3}$/.test(clean(i.str));
-      if (!numberCol && dateCol && cx >= dateCol.from && cx < dateCol.to) return /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(i.str);
+      if (numberCol && cx >= numberCol.from && cx < numberCol.to) return /^\d{1,3}\.?$/.test(clean(i.str));
+      if (!numberCol && dateCol && cx >= dateCol.from && cx < dateCol.to)
+        return /\d{1,2}\/\d{1,2}\/\d{2,4}|^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}/i.test(clean(i.str));
       return false;
     })
     .map((i) => i.y)
-    .sort((a, b) => a - b);
-  if (!starts.length) return [];
+    .sort((a, b) => a - b)
+    .filter((y, k, all) => k === 0 || y - all[k - 1] > 1); // one start per line
+  if (!starts.length) return { rows: [], columns: own };
+  // continuation page: the table starts half a row above the first number
+  if (!own) headerBottom = starts[0] - (starts.length > 1 ? (starts[1] - starts[0]) / 2 : 20) - 1;
 
   // Each row's text is centred vertically around its number, so split halfway between numbers.
   const rows: ParsedRow[] = [];
@@ -148,20 +168,35 @@ export function parseTransmittalPage(items: TextItem[]): ParsedRow[] {
     if (d) r.date_received = `${d[3].length === 2 ? '20' + d[3] : d[3]}-${d[1].padStart(2, '0')}-${d[2].padStart(2, '0')}`;
     if (r.contact_number) r.contact_number = r.contact_number.replace(/[^\d+]/g, '');
   });
-  return rows;
+  return { rows, columns: own ?? carry ?? null };
 }
 
-/** "Dasmariñas ThirdGen - Burol Main" → organization + barangay (when the last part is a known barangay). */
+/**
+ * Organization and barangay as two separate values (same rules as the database, see 0010):
+ *   "KBDM - Salitran IV", "KBDM (Salitran IV)", "KBDM, Salitran IV", "KBDM of Brgy. Salitran IV" → KBDM + Salitran IV
+ *   "Barangay Salitran IV" → no organization, barangay Salitran IV
+ * The barangay must be in the official list; otherwise the text stays as the organization.
+ */
 export function splitOrgBarangay(text: string, barangays: string[]): { organization: string; barangay: string } {
-  const t = text.trim();
-  const parts = t.split(/\s+[-–]\s+/);
-  if (parts.length > 1) {
-    const last = parts[parts.length - 1];
-    const known = barangays.find((b) => norm(b) === norm(last)); // "St. Peter I" = "Saint Peter I", "Luzviminda 2" = "Luzviminda II"
-    if (known) return { organization: parts.slice(0, -1).join(' - '), barangay: known };
+  const t = text.trim().replace(/\s+/g, ' ');
+  if (!t) return { organization: '', barangay: '' };
+  const find = (x: string) => {
+    const k = norm(x.replace(/\b(barangay|brgy|bgy)\b\.?/gi, ' ')).trim();
+    return k ? barangays.find((b) => norm(b.replace(/\b(barangay|brgy|bgy)\b\.?/gi, ' ')).trim() === k) : undefined;
+  };
+  const tidy = (x: string) => x.replace(/^[\s,–—-]+|[\s,–—-]+$/g, '').trim();
+  const sep = t.match(/^(.+?)\s*(?:\s[-–—]\s|,|\()\s*([^,()]+?)\)?$/);
+  if (sep) {
+    const b = find(sep[2]);
+    if (b) return { organization: tidy(sep[1]), barangay: b };
   }
-  const exact = barangays.find((b) => norm(b) === norm(t));
-  return exact ? { organization: '', barangay: exact } : { organization: t, barangay: '' };
+  const of = t.match(/^(.+?)\s+(?:(?:of|ng|sa)\s+)?(?:barangay|brgy\.?|bgy\.?)\s+(.+)$/i);
+  if (of) {
+    const b = find(of[2]);
+    if (b) return { organization: tidy(of[1]), barangay: b };
+  }
+  const whole = find(t);
+  return whole ? { organization: '', barangay: whole } : { organization: t, barangay: '' };
 }
 
 /**

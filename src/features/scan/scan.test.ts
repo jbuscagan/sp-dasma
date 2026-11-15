@@ -112,6 +112,54 @@ describe('prepared transmittal PDFs', () => {
     expect(rows[0]).toMatchObject({ date_received: '2026-10-29', solicitor_name: 'Glenda Sescar', contact_number: '09388293438', event_date: 'December 13, 2026', purpose: 'Christmas Party' });
     expect(splitOrgBarangay(rows[1].orgBarangay ?? '', BARANGAYS)).toEqual({ organization: 'Senior Citizens Association', barangay: 'Saint Peter I' });
   }, 30000);
+
+  it('reads all 73 rows of a long, multi-page list (also pages without column titles)', async () => {
+    const committee: Committee = { id: 'c', name: 'Office of SPM Robin Cantimbuhan', spm_name: 'Robin Cantimbuhan', code_prefix: 'SPMRC' };
+    const base = { committee_id: 'c', type: 'ngo', patient_name: null, request_details: null, diagnosis: null, assistance_spec: null, remarks: null, assistance_status: 'pending', assistance_date: null, status: 'draft', archived_reason: null, transmittal_id: null, attachment_paths: [] as string[], position: null, submitted_at: null, received_by: null, received_at: null, created_at: '', updated_at: '', organization_id: null, barangay_id: null, received_committee_id: null, purpose: null } as const;
+    const entries: Entry[] = Array.from({ length: 73 }, (_, i) => ({
+      ...base,
+      id: String(i),
+      date_received: `2026-11-${String((i % 27) + 1).padStart(2, '0')}`,
+      solicitor_name: `Person Number ${i + 1}`,
+      // every 5th row has a long organization name that wraps onto several lines
+      organization: i % 5 === 0 ? 'Samahan ng mga Magulang at Guro ng Paaralang Elementarya ng Dasmariñas' : `Org ${i + 1}`,
+      barangay: i % 2 ? 'Burol Main' : 'Saint Peter I',
+      request: 'Cash',
+      contact_number: `0917${String(1000000 + i)}`,
+      event_date: 'December 13, 2026',
+    }));
+    const doc = buildReport({ header: buildHeader('ngo', committee, entries, '2026-11-05'), columns: TYPES.ngo.columns, entries, headerColor: '#b6d7a8', headerText: '#000000', encoderName: 'J', encoderPosition: 'AA', paper: 'A4', orientation: 'landscape' });
+    const pdf = new Uint8Array(await (await renderPdf(doc)).arrayBuffer());
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const file = await pdfjs.getDocument({ data: pdf }).promise;
+    const { parseTablePage } = await import('./tableParse');
+    for (const dropRepeatedTitles of [false, true]) {
+      const rows: Record<string, string>[] = [];
+      let carry = null;
+      for (let p = 1; p <= file.numPages; p++) {
+        let items = await pageTextItems(await file.getPage(p));
+        // other programs often print the column titles on page 1 only
+        if (dropRepeatedTitles && p > 1) items = items.filter((i) => !/^(#|DATE|RECEIVED|NAME OF THE|SOLICITOR|ORGANIZATION|\/ BARANGAY|REQUEST|CONTACT|NO\.|OF EVENT|EVENT)$/i.test(i.str.trim()));
+        const r = parseTablePage(items, carry);
+        carry = r.columns;
+        rows.push(...(r.rows as Record<string, string>[]));
+      }
+      expect(file.numPages).toBeGreaterThan(1);
+      expect(rows).toHaveLength(73);
+      rows.forEach((r, i) => {
+        expect(r.solicitor_name).toBe(`Person Number ${i + 1}`);
+        expect(r.contact_number).toBe(`0917${String(1000000 + i)}`);
+        expect(splitOrgBarangay(r.orgBarangay ?? '', BARANGAYS).organization).toBe(entries[i].organization);
+      });
+    }
+  }, 60000);
+
+  it('keeps organization and barangay apart', () => {
+    expect(splitOrgBarangay('KBDM (Burol Main)', BARANGAYS)).toEqual({ organization: 'KBDM', barangay: 'Burol Main' });
+    expect(splitOrgBarangay('KBDM of Brgy. Burol Main', BARANGAYS)).toEqual({ organization: 'KBDM', barangay: 'Burol Main' });
+    expect(splitOrgBarangay('Barangay Burol Main', BARANGAYS)).toEqual({ organization: '', barangay: 'Burol Main' });
+    expect(splitOrgBarangay('Tau Gamma Phi, Saint Peter 1', BARANGAYS)).toEqual({ organization: 'Tau Gamma Phi', barangay: 'Saint Peter I' });
+  });
 });
 
 describe('duplicate checks', async () => {
