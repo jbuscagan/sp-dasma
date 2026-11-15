@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brand palette: Dasmariñas green + butterfly gold (Paru-Paro Festival). Change colours here only. */
+:root {
+  --brand-50: 236 247 240;
+  --brand-100: 209 236 219;
+  --brand-500: 34 150 90;
+  --brand-600: 20 120 70;
+  --brand-700: 14 94 56;
+  --brand-900: 8 52 32;
+  --gold: 214 160 30;
+  --surface: 246 248 246;
+  --panel: 255 255 255;
+  --line: 222 230 225;
+  --ink: 17 24 39;
+  --muted: 100 110 130;
+  --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  color-scheme: light;
+}
+
+.dark {
+  --brand-50: 20 45 33;
+  --brand-100: 28 62 45;
+  --brand-500: 80 190 130;
+  --brand-600: 95 205 145;
+  --brand-700: 150 225 180;
+  --brand-900: 215 245 225;
+  --surface: 11 18 15;
+  --panel: 19 29 24;
+  --line: 40 56 47;
+  --ink: 230 234 242;
+  --muted: 150 160 180;
+  color-scheme: dark;
+}
+
+body { @apply bg-surface text-ink antialiased; }
+
+@layer components {
+  .card { @apply rounded-xl border border-line bg-panel shadow-sm; }
+  .input {
+    @apply w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm text-ink outline-none
+           placeholder:text-muted/70 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
+  }
+  .label { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-muted; }
+  .table-base { @apply w-full border-collapse text-sm; }
+  .table-base th { @apply sticky top-0 z-10 border-b border-line bg-brand-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-brand-700; }
+  .table-base td { @apply border-b border-line px-3 py-2 align-top; }
+  .table-base tr:hover td { @apply bg-brand-50/40; }
+}
+
+/* Scrolls, but without showing a scrollbar (sidebar menu). */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

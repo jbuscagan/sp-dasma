@@ -1,0 +1,198 @@
+'use client';
+// Type-ahead dropdown: shows matching suggestions (with an arrow to open the full list) but always accepts
+// whatever the user types. The list floats above the page, so it is never cut off inside scrolling tables.
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
+
+export interface ComboOption<T = unknown> {
+  label: string; // what is shown in the list
+  value: string; // what goes into the input
+  hint?: string; // small grey text
+  data?: T;
+}
+
+export function Combobox<T>({
+  value,
+  onChange,
+  onPick,
+  onCommit,
+  options,
+  placeholder,
+  required,
+  maxShown = 50,
+  inputClassName = 'input pr-8',
+  disabled,
+  invalid,
+  onKeyDown,
+  onPaste,
+  dataCell,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onPick?: (o: ComboOption<T>) => void;
+  onCommit?: (v: string) => void; // when the user leaves the field or picks an option
+  options: ComboOption<T>[];
+  placeholder?: string;
+  required?: boolean;
+  maxShown?: number;
+  inputClassName?: string;
+  disabled?: boolean;
+  invalid?: boolean;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void;
+  dataCell?: string;
+  ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false); // arrow clicked: show the whole list, not only matches
+  const [active, setActive] = useState(0);
+  const [rect, setRect] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+  const listId = useId();
+
+  const matches = useMemo(() => {
+    const words = all ? [] : value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const found = words.length ? options.filter((o) => words.every((w) => `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(w))) : options;
+    return found.slice(0, maxShown);
+  }, [value, options, maxShown, all]);
+
+  // Position the floating list under (or above) the input.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = input.current?.getBoundingClientRect();
+      if (!r) return;
+      const up = r.bottom + 260 > window.innerHeight && r.top > 260;
+      setRect({ left: r.left, top: up ? r.top : r.bottom, width: Math.max(r.width, 220), up });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!input.current?.parentElement?.contains(t) && !list.current?.contains(t)) {
+        setOpen(false);
+        setAll(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const pick = (o: ComboOption<T>) => {
+    onChange(o.value);
+    onPick?.(o);
+    onCommit?.(o.value);
+    setOpen(false);
+    setAll(false);
+  };
+
+  return (
+    <div className="relative">
+      <input
+        ref={input}
+        className={`${inputClassName} ${invalid ? 'bg-red-50 ring-2 ring-inset ring-red-400 dark:bg-red-950/40' : ''}`}
+        value={value}
+        placeholder={placeholder}
+        required={required}
+        disabled={disabled}
+        data-cell={dataCell}
+        aria-label={ariaLabel}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        autoComplete="off"
+        onFocus={() => setOpen(true)}
+        onBlur={(e) => {
+          if (list.current?.contains(e.relatedTarget as Node)) return;
+          onCommit?.(e.target.value);
+        }}
+        onPaste={onPaste}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+          setAll(false);
+          setActive(0);
+        }}
+        onKeyDown={(e) => {
+          if (open && matches.length) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setActive((a) => Math.min(a + 1, matches.length - 1));
+              return;
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setActive((a) => Math.max(a - 1, 0));
+              return;
+            }
+            if (e.key === 'Enter' && value.trim() && matches[active] && matches[active].value !== value) {
+              e.preventDefault();
+              pick(matches[active]);
+              return;
+            }
+          }
+          if (e.key === 'Escape') setOpen(false);
+          if (e.key === 'Tab' || e.key === 'Enter') setOpen(false);
+          onKeyDown?.(e);
+        }}
+      />
+      {!disabled && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Show list"
+          className="absolute inset-y-0 right-0 flex w-7 items-center justify-center text-muted hover:text-brand-600"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setAll((a) => !(open && a));
+            setOpen((o) => !(o && all));
+            input.current?.focus();
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden><path d="M6 9l6 6 6-6" /></svg>
+        </button>
+      )}
+      {open &&
+        rect &&
+        matches.length > 0 &&
+        createPortal(
+          <ul
+            ref={list}
+            id={listId}
+            role="listbox"
+            style={{ position: 'fixed', left: rect.left, width: rect.width, ...(rect.up ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.top + 4 }) }}
+            className="z-[60] max-h-64 overflow-auto rounded-lg border border-line bg-panel py-1 text-sm shadow-xl"
+          >
+            {matches.map((o, i) => (
+              <li
+                key={o.label + (o.hint ?? '') + i}
+                role="option"
+                aria-selected={i === active}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(o);
+                }}
+                onMouseEnter={() => setActive(i)}
+                className={`cursor-pointer px-3 py-1.5 ${i === active ? 'bg-brand-50 text-brand-700' : ''}`}
+              >
+                {o.label}
+                {o.hint && <span className="ml-2 text-xs text-muted">{o.hint}</span>}
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
+    </div>
+  );
+}
