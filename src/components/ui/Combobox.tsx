@@ -53,6 +53,7 @@ export function Combobox<T>({
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState(false); // filter only by what was typed since the list opened
+  const [navigated, setNavigated] = useState(false); // ↑/↓ used to choose a suggestion
   const [active, setActive] = useState(0);
   const [rect, setRect] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null);
   const input = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
@@ -76,6 +77,7 @@ export function Combobox<T>({
   const closeList = () => {
     setOpen(false);
     setTyped(false);
+    setNavigated(false);
   };
 
   // keep the highlighted choice visible
@@ -143,6 +145,7 @@ export function Combobox<T>({
           onChange(e.target.value);
           setOpen(true);
           setTyped(true);
+          setNavigated(false);
           setActive(0);
         }}
         onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
@@ -154,13 +157,26 @@ export function Combobox<T>({
           if (open && matches.length) {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
+              setNavigated(true);
               setActive((a) => Math.min(a + 1, matches.length - 1));
               return;
             }
             if (e.key === 'ArrowUp') {
               e.preventDefault();
+              setNavigated(true);
               setActive((a) => Math.max(a - 1, 0));
               return;
+            }
+            // Tab takes the highlighted suggestion (like a spreadsheet) and still moves to the next cell:
+            // when ↑/↓ was used, when it is the only suggestion, or when it starts with what was typed.
+            const hit = matches[active];
+            if (e.key === 'Tab' && !e.shiftKey && hit && hit.value !== value && (navigated || (typed && value.trim() && (matches.length === 1 || hit.label.toLowerCase().startsWith(value.trim().toLowerCase()))))) {
+              onChange(hit.value);
+              onPick?.(hit);
+              onCommit?.(hit.value);
+              closeList();
+              onKeyDown?.(e);
+              return; // no preventDefault: the browser moves to the next cell
             }
             if (e.key === 'Enter' && matches[active] && matches[active].value !== value && (typed ? value.trim() : true)) {
               e.preventDefault();

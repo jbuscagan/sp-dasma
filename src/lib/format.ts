@@ -65,9 +65,10 @@ export function parseDateRange(text: string): { from: string; to: string } {
   return { from, to };
 }
 
-/** "Office of SPM Robin Cantimbuhan" → "SPM Robin Cantimbuhan" (used for "Received by"). */
-export function officeShortName(c: { name: string; spm_name?: string | null } | null | undefined): string {
+/** "Received by": SPM + full name (SPM Robin Chester J. Cantimbuhan); falls back to the code name / office name. */
+export function officeShortName(c: { name: string; spm_name?: string | null; spm_full_name?: string | null } | null | undefined): string {
   if (!c) return '';
+  if (c.spm_full_name?.trim()) return `SPM ${c.spm_full_name.trim()}`;
   if (c.spm_name?.trim()) return `SPM ${c.spm_name.trim()}`;
   return c.name.replace(/^\s*office\s+of\s+(the\s+)?/i, '').trim() || c.name;
 }

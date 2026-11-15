@@ -10,7 +10,7 @@ import { useCommittees } from './useCommittees';
 
 export function OfficesTab() {
   const committees = useCommittees();
-  const [draft, setDraft] = useState({ name: '', spm_name: '', code_prefix: 'SPM' });
+  const [draft, setDraft] = useState({ name: '', spm_name: '', spm_full_name: '', code_prefix: 'SPM' });
   const [error, setError] = useState('');
 
   const save = async (c: Partial<Committee>, id?: string) => {
@@ -22,12 +22,13 @@ export function OfficesTab() {
   return (
     <div className="space-y-4">
       {error && <Alert kind="error">{error}</Alert>}
-      <div className="card grid gap-3 p-4 sm:grid-cols-4">
+      <div className="card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
         <Field label="Office name"><input className="input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Office of SPM Robin Cantimbuhan" /></Field>
         <Field label="SPM code name"><input className="input" value={draft.spm_name} onChange={(e) => setDraft({ ...draft, spm_name: e.target.value })} placeholder="Robin Cantimbuhan" /></Field>
+        <Field label="SPM full name (Received by)"><input className="input" value={draft.spm_full_name} onChange={(e) => setDraft({ ...draft, spm_full_name: e.target.value })} placeholder="Robin Chester J. Cantimbuhan" /></Field>
         <Field label="Code prefix"><input className="input uppercase" value={draft.code_prefix} onChange={(e) => setDraft({ ...draft, code_prefix: e.target.value.toUpperCase() })} /></Field>
         <div className="flex items-end">
-          <Button className="w-full" disabled={!draft.name.trim()} onClick={async () => { await save(draft); setDraft({ name: '', spm_name: '', code_prefix: 'SPM' }); }}>
+          <Button className="w-full" disabled={!draft.name.trim()} onClick={async () => { await save(draft); setDraft({ name: '', spm_name: '', spm_full_name: '', code_prefix: 'SPM' }); }}>
             ＋ Add office
           </Button>
         </div>
@@ -35,11 +36,11 @@ export function OfficesTab() {
       <BrandingCard />
       <div className="card">
         <table className="table-base">
-          <thead><tr><th>Office name</th><th>SPM code name</th><th>Prefix</th><th title="May edit and delete its own records after transmitting, and publish the weekly list in Published (All)">Edit / delete / publish</th><th title="May encode and edit the Budget module">Budget</th></tr></thead>
+          <thead><tr><th>Office name</th><th>SPM code name</th><th title="Shown in Received by">SPM full name</th><th>Prefix</th><th title="May edit and delete its own records after transmitting, and publish the weekly list in Published (All)">Edit / delete / publish</th><th title="May encode and edit the Budget module">Budget</th></tr></thead>
           <tbody>
             {(committees.data ?? []).map((c) => (
               <tr key={c.id}>
-                {(['name', 'spm_name', 'code_prefix'] as const).map((k) => (
+                {(['name', 'spm_name', 'spm_full_name', 'code_prefix'] as const).map((k) => (
                   <td key={k}>
                     <input className="input py-1" defaultValue={c[k] ?? ''} onBlur={(e) => e.target.value !== (c[k] ?? '') && save({ [k]: e.target.value }, c.id)} />
                   </td>

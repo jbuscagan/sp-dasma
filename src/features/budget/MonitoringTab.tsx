@@ -23,6 +23,7 @@ import type { Entry, TransmittalType } from '@/lib/types';
 import { deleteBatch, deleteItem, listBatches, listItems, saveBatch, saveItem, uploadBudgetAttachment, type MonitoringBatch, type MonitoringItem } from './api';
 import { MoneyInput } from './ContributionTab';
 import { peso } from './money';
+import { officeShortName } from '@/lib/format';
 
 export const CATEGORIES = ['CSO', 'SK', 'BRGY', 'MEDICAL', 'OTHER'] as const;
 export const CATEGORY_LABEL: Record<string, string> = { CSO: 'CSO', SK: 'SK', BRGY: 'Brgy', MEDICAL: 'Medical', OTHER: 'Others' };
@@ -156,7 +157,7 @@ function BatchEditor({
   const dirty = unsavedRows.size > 0 || (b.title ?? '') !== (savedB.title ?? '') || (b.covering ?? '') !== (savedB.covering ?? '');
   /** Leaving the field being typed in saves it (every field saves itself when you leave it). */
   const saveNow = () => (document.activeElement as HTMLElement | null)?.blur();
-  const givers = useMemo(() => committees.map((c) => ({ label: c.spm_name ? `SPM ${c.spm_name}` : c.name, value: c.spm_name ? `SPM ${c.spm_name}` : c.name })), [committees]);
+  const givers = useMemo(() => committees.map((c) => ({ label: officeShortName(c), value: officeShortName(c) })), [committees]);
 
   const persist = async (next: MonitoringBatch) => {
     setB(next);

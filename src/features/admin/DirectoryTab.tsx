@@ -8,9 +8,35 @@ import { must, useLive } from '@/hooks/useLive';
 import type { Organization } from '@/lib/types';
 import { ImportDialog } from './ImportDialog';
 
+/** Removes some (ids) or all (null) barangays / organizations. Requests that used them simply lose that link. */
+async function removeMany(kind: 'barangays' | 'organizations', ids: (string | number)[] | null): Promise<string> {
+  const { data, error } = await supabase().rpc(kind === 'barangays' ? 'remove_barangays' : 'remove_organizations', { p_ids: ids });
+  if (error) throw new Error(error.message);
+  return `Removed ${data ?? 0} ${kind}.`;
+}
+
+function confirmRemove(kind: string, count: number | 'all'): boolean {
+  const what = count === 'all' ? `ALL ${kind}` : `${count} ${kind}`;
+  if (!confirm(`Remove ${what}?\n\nRequests that use ${count === 'all' ? 'them' : 'it/them'} keep everything else but will show no ${kind === 'barangays' ? 'barangay' : 'organization'}.${kind === 'barangays' ? ' Their budget rows are removed too.' : ''}`)) return false;
+  if (count === 'all') return prompt(`To remove ALL ${kind}, type DELETE`) === 'DELETE';
+  return true;
+}
+
 export function DirectoryTab() {
   const brgy = useLive(async () => must(await supabase().from('barangays').select('*').order('name')) as { id: number; name: string }[], ['barangays']);
   const [newBrgy, setNewBrgy] = useState('');
+  const [pickedB, setPickedB] = useState<Set<number>>(new Set());
+  const [notice, setNotice] = useState('');
+  const removeB = async (ids: number[] | null, count: number | 'all') => {
+    if (!confirmRemove('barangays', count)) return;
+    try {
+      setNotice(await removeMany('barangays', ids));
+      setPickedB(new Set());
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
   const act = async (p: PromiseLike<{ error: { message: string } | null }>) => {
@@ -26,8 +52,13 @@ export function DirectoryTab() {
       </div>
       <ImportDialog open={importing} onClose={() => setImporting(false)} />
       {error && <div className="lg:col-span-2"><Alert kind="error">{error}</Alert></div>}
+      {notice && !error && <div className="lg:col-span-2"><Alert kind="ok">{notice}</Alert></div>}
       <section className="card p-4">
-        <h3 className="mb-3 text-sm font-semibold">Barangays ({brgy.data?.length ?? 0})</h3>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h3 className="mr-auto text-sm font-semibold">Barangays ({brgy.data?.length ?? 0})</h3>
+          {pickedB.size > 0 && <Button size="sm" variant="secondary" className="text-red-600" onClick={() => removeB(Array.from(pickedB), pickedB.size)}>Remove selected ({pickedB.size})</Button>}
+          <Button size="sm" variant="ghost" className="text-red-600" disabled={!brgy.data?.length} onClick={() => removeB(null, 'all')}>Remove all</Button>
+        </div>
         <div className="mb-3 flex gap-2">
           <input className="input" value={newBrgy} onChange={(e) => setNewBrgy(e.target.value)} placeholder="New barangay" />
           <Button disabled={!newBrgy.trim()} onClick={async () => { await act(supabase().from('barangays').insert({ name: newBrgy.trim() })); setNewBrgy(''); }}>Add</Button>
@@ -35,6 +66,7 @@ export function DirectoryTab() {
         <ul className="max-h-[60vh] divide-y divide-line overflow-y-auto text-sm">
           {(brgy.data ?? []).map((b) => (
             <li key={b.id} className="flex items-center justify-between gap-2 py-1">
+              <input type="checkbox" className="h-4 w-4 shrink-0 accent-brand-600" aria-label={`Select ${b.name}`} checked={pickedB.has(b.id)} onChange={() => setPickedB((x) => { const n = new Set(x); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })} />
               {/* Renaming here changes the name on every request and budget at once (the name is stored only here). */}
               <input
                 className="input py-1"
@@ -42,24 +74,30 @@ export function DirectoryTab() {
                 aria-label="Barangay name"
                 onBlur={(e) => e.target.value.trim() && e.target.value !== b.name && act(supabase().from('barangays').update({ name: e.target.value.trim() }).eq('id', b.id))}
               />
-              <button className="text-xs text-red-600 hover:underline" onClick={async () => {
-                if (!confirm(`Remove ${b.name}?`)) return;
-                const { error } = await supabase().from('barangays').delete().eq('id', b.id);
-                // A barangay used by requests or budgets cannot be removed (so no record loses its barangay); rename it instead.
-                setError(error ? (error.code === '23503' ? `${b.name} is used by saved requests or budgets, so it cannot be removed. You can rename it instead.` : error.message) : '');
-              }}>Remove</button>
+              <button className="text-xs text-red-600 hover:underline" onClick={() => removeB([b.id], 1)}>Remove</button>
             </li>
           ))}
         </ul>
       </section>
-      <Organizations onError={setError} />
+      <Organizations onError={setError} onNotice={setNotice} />
     </div>
   );
 }
 
 /** One record per organization. The barangays / chapters are taken from the transmittals that use it. */
 
-function Organizations({ onError }: { onError: (m: string) => void }) {
+function Organizations({ onError, onNotice }: { onError: (m: string) => void; onNotice: (m: string) => void }) {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const removeO = async (ids: string[] | null, count: number | 'all') => {
+    if (!confirmRemove('organizations', count)) return;
+    try {
+      onNotice(await removeMany('organizations', ids));
+      setPicked(new Set());
+      onError('');
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const orgs = useLive(async () => must(await supabase().from('organizations').select('id,name').order('name')) as Organization[], ['organizations']);
   const usage = useLive(async () => {
     const rows = must(await supabase().from(T.entries).select('organization_id,barangay').not('organization_id', 'is', null).limit(20000)) as { organization_id: string; barangay: string | null }[];
@@ -79,10 +117,13 @@ function Organizations({ onError }: { onError: (m: string) => void }) {
 
   return (
     <section className="card p-4">
-      <h3 className="mb-1 text-sm font-semibold">Organizations ({orgs.data?.length ?? 0})</h3>
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <h3 className="mr-auto text-sm font-semibold">Organizations ({orgs.data?.length ?? 0})</h3>
+        {picked.size > 0 && <Button size="sm" variant="secondary" className="text-red-600" onClick={() => removeO(Array.from(picked), picked.size)}>Remove selected ({picked.size})</Button>}
+        <Button size="sm" variant="ghost" className="text-red-600" disabled={!orgs.data?.length} onClick={() => removeO(null, 'all')}>Remove all</Button>
+      </div>
       <p className="mb-3 text-xs text-muted">
-        One record per organization (e.g. KBDM). The barangay or chapter is chosen on each transmittal, so an organization with 75 chapters is still one record.
-        New names typed by encoders are added automatically; merge duplicates here.
+        One record per organization (e.g. KBDM); the barangay is chosen on each transmittal. New names typed by encoders are added automatically; merge duplicates here.
       </p>
       <div className="mb-3 flex gap-2">
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Organization name" />
@@ -91,17 +132,18 @@ function Organizations({ onError }: { onError: (m: string) => void }) {
       <input className="input mb-2" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="max-h-[55vh] overflow-y-auto">
         <table className="table-base">
-          <thead><tr><th>Name</th><th>Barangays / chapters used</th><th /></tr></thead>
+          <thead><tr><th className="w-8"><input type="checkbox" className="h-4 w-4 accent-brand-600" aria-label="Select all shown" checked={list.length > 0 && list.every((o) => picked.has(o.id))} onChange={(e) => setPicked(e.target.checked ? new Set(list.map((o) => o.id)) : new Set())} /></th><th>Name</th><th>Barangays used</th><th /></tr></thead>
           <tbody>
             {list.map((o) => {
               const used = Array.from(usage.data?.get(o.id) ?? []);
               return (
                 <tr key={o.id}>
+                  <td><input type="checkbox" className="h-4 w-4 accent-brand-600" aria-label={`Select ${o.name}`} checked={picked.has(o.id)} onChange={() => setPicked((x) => { const n = new Set(x); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n; })} /></td>
                   <td><input className="input py-1" defaultValue={o.name} onBlur={(e) => e.target.value.trim() && e.target.value !== o.name && act(supabase().from('organizations').update({ name: e.target.value.trim() }).eq('id', o.id))} /></td>
                   <td className="text-xs text-muted" title={used.join(', ')}>{used.length ? `${used.length}: ${used.slice(0, 4).join(', ')}${used.length > 4 ? '…' : ''}` : '—'}</td>
                   <td className="whitespace-nowrap text-right">
                     <button className="mr-3 text-xs text-brand-600 hover:underline" onClick={() => { setMergeFrom(o); setMergeInto(''); }}>Merge…</button>
-                    <button className="text-xs text-red-600 hover:underline" onClick={() => confirm(`Delete ${o.name}? Entries keep the name but lose the link.`) && act(supabase().from('organizations').delete().eq('id', o.id))}>Delete</button>
+                    <button className="text-xs text-red-600 hover:underline" onClick={() => removeO([o.id], 1)}>Remove</button>
                   </td>
                 </tr>
               );

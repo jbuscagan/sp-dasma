@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS public.committees (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name text NOT NULL,
     spm_name text,
+    spm_full_name text,
     code_prefix text DEFAULT 'SPM'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     can_edit_published boolean DEFAULT false NOT NULL,
@@ -322,6 +323,9 @@ ALTER SEQUENCE public.barangays_id_seq OWNED BY public.barangays.id;
 ALTER TABLE ONLY public.audit_log ALTER COLUMN id SET DEFAULT nextval('public.audit_log_id_seq'::regclass);
 
 ALTER TABLE ONLY public.barangays ALTER COLUMN id SET DEFAULT nextval('public.barangays_id_seq'::regclass);
+
+-- columns added after the first version (an existing database gets them here)
+ALTER TABLE public.committees ADD COLUMN IF NOT EXISTS spm_full_name text;  -- e.g. Robin Chester J. Cantimbuhan ("Received by")
 
 -- =====================================================================
 -- 2. Keys and links between tables
@@ -759,6 +763,10 @@ declare
   v_changes jsonb;
   skip text[] := array['updated_at', 'updated_by', 'created_at'];
 begin
+  -- bulk clean-ups (Admin › Remove barangays / organizations) write one summary line instead
+  if current_setting('app.skip_entry_audit', true) = 'on' then
+    return coalesce(new, old);
+  end if;
   if tg_op = 'INSERT' then
     insert into audit_log (committee_id, action, table_name, record_id, summary)
     values (new.committee_id, 'create', 'entries', new.id, coalesce(new.patient_name, new.solicitor_name) || ' (' || new.type || ')');
@@ -1076,6 +1084,7 @@ CREATE OR REPLACE FUNCTION public.office_short_name(c public.committees) RETURNS
     LANGUAGE sql IMMUTABLE
     AS $$
   select coalesce(
+    'SPM ' || nullif(btrim(c.spm_full_name), ''),
     'SPM ' || nullif(btrim(c.spm_name), ''),
     nullif(btrim(regexp_replace(c.name, '^\s*office\s+of\s+(the\s+)?', '', 'i')), ''),
     c.name);
@@ -1259,6 +1268,55 @@ begin
     raise exception 'None of the selected entries could be published (already published or not yours).';
   end if;
   return v_id;
+end $$;
+
+-- Admin › Barangays & organizations: remove some (p_ids) or ALL (p_ids = null).
+-- Requests that used them keep everything else and simply show no barangay / organization.
+CREATE OR REPLACE FUNCTION public.remove_barangays(p_ids integer[] DEFAULT NULL) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  n int;
+  touched int;
+begin
+  if not public.is_admin() then
+    raise exception 'Only an administrator can remove barangays.';
+  end if;
+  perform set_config('app.skip_entry_audit', 'on', true);
+  update entries set barangay_id = null where barangay_id is not null and (p_ids is null or barangay_id = any (p_ids));
+  get diagnostics touched = row_count;
+  perform set_config('app.skip_entry_audit', 'off', true);
+  delete from barangay_budgets where p_ids is null or barangay_id = any (p_ids);
+  delete from barangays where p_ids is null or id = any (p_ids);
+  get diagnostics n = row_count;
+  insert into audit_log (committee_id, action, table_name, summary)
+  values (public.my_committee(), 'delete', 'barangays',
+          case when p_ids is null then 'Removed ALL barangays' else 'Removed ' || n || ' barangay(s)' end || ' · ' || touched || ' request(s) now without barangay');
+  return n;
+end $$;
+
+CREATE OR REPLACE FUNCTION public.remove_organizations(p_ids uuid[] DEFAULT NULL) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  n int;
+  touched int;
+begin
+  if not public.is_admin() then
+    raise exception 'Only an administrator can remove organizations.';
+  end if;
+  perform set_config('app.skip_entry_audit', 'on', true);
+  update entries set organization_id = null where organization_id is not null and (p_ids is null or organization_id = any (p_ids));
+  get diagnostics touched = row_count;
+  perform set_config('app.skip_entry_audit', 'off', true);
+  delete from organizations where p_ids is null or id = any (p_ids);
+  get diagnostics n = row_count;
+  insert into audit_log (committee_id, action, table_name, summary)
+  values (public.my_committee(), 'delete', 'organizations',
+          case when p_ids is null then 'Removed ALL organizations' else 'Removed ' || n || ' organization(s)' end || ' · ' || touched || ' request(s) now without organization');
+  return n;
 end $$;
 
 -- =====================================================================

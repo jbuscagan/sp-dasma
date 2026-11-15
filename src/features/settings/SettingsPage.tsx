@@ -20,7 +20,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function SettingsPage() {
   const { profile, committee, setProfile, setCommittee } = useSession();
   const [me, setMe] = useState({ encoder_name: profile.encoder_name ?? '', position: profile.position ?? '' });
-  const [office, setOffice] = useState({ name: committee?.name ?? '', spm_name: committee?.spm_name ?? '', code_prefix: committee?.code_prefix ?? '' });
+  const [office, setOffice] = useState({ name: committee?.name ?? '', spm_name: committee?.spm_name ?? '', spm_full_name: committee?.spm_full_name ?? '', code_prefix: committee?.code_prefix ?? '' });
   const [password, setPassword] = useState('');
   const [theme, setThemeState] = useState<Theme>('light');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -94,6 +94,7 @@ export function SettingsPage() {
                 <Field label="Office name"><input className="input" value={office.name} onChange={(e) => setOffice({ ...office, name: e.target.value })} /></Field>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="SPM code name" hint="Printed as OFFICE OF SPM …"><input className="input" value={office.spm_name} onChange={(e) => setOffice({ ...office, spm_name: e.target.value })} /></Field>
+                  <Field label="SPM full name" hint="Shown in “Received by”, e.g. Robin Chester J. Cantimbuhan"><input className="input" value={office.spm_full_name} onChange={(e) => setOffice({ ...office, spm_full_name: e.target.value })} /></Field>
                   <Field label="Code prefix" hint="e.g. SPMRC"><input className="input uppercase" value={office.code_prefix} onChange={(e) => setOffice({ ...office, code_prefix: e.target.value.toUpperCase() })} /></Field>
                 </div>
               </div>

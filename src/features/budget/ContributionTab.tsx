@@ -228,7 +228,7 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
 
           <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
             <Field label="Notes (one per line, printed under the report)">
-              <textarea className="input min-h-[90px]" disabled={!canEdit} placeholder={'₱5,000 - Vice\n₱9,000 - RJC'} value={draft.notes ?? ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
+              <textarea className="input min-h-[90px]" disabled={!canEdit} value={draft.notes ?? ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
             </Field>
             {t && (
               <div className="card space-y-1.5 p-4 text-sm">

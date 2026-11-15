@@ -7,7 +7,8 @@ export type EntryStatus = 'draft' | 'submitted' | 'transmitted' | 'archived';
 export interface Committee {
   id: string;
   name: string;
-  spm_name: string | null;
+  spm_name: string | null; // short code name, e.g. Robin Cantimbuhan (report codes, office line)
+  spm_full_name?: string | null; // full name, e.g. Robin Chester J. Cantimbuhan ("Received by")
   code_prefix: string;
   can_edit_published?: boolean; // set by the admin: may edit / delete its own published records and publish the weekly list
   can_budget?: boolean; // set by the admin: may edit the Budget module

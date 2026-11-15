@@ -77,3 +77,41 @@ do $$ declare a int; b int; begin
   raise notice 'PASS admin merges a misspelled barangay into the right one';
 end $$;
 reset role;
+
+-- ---------- full SPM name in "Received by"; removing barangays / organizations ----------
+select pg_temp.as_user('aaaaaaaa-0000-0000-0000-000000000000');
+do $$ declare v uuid; nb int; no int; n int; begin
+  update committees set spm_full_name = 'Robin Chester J. Cantimbuhan' where id = '11111111-1111-1111-1111-111111111111';
+  select id into v from entry_list where received_committee_id = '11111111-1111-1111-1111-111111111111' limit 1;
+  assert (select received_by from entry_list where id = v) = 'SPM Robin Chester J. Cantimbuhan', 'FAIL full name';
+  raise notice 'PASS received by shows the full name: %', (select received_by from entry_list where id = v);
+
+  insert into barangays (name) values ('Not Really A Barangay');
+  update entries set barangay_id = (select id from barangays where name = 'Not Really A Barangay') where solicitor_name = 'Mixed Org';
+  n := (select count(*) from audit_log);
+  perform remove_barangays(array[(select id from barangays where name = 'Not Really A Barangay')]);
+  assert not exists (select 1 from barangays where name = 'Not Really A Barangay'), 'FAIL remove barangay in use';
+  assert (select barangay_id from entries where solicitor_name = 'Mixed Org') is null, 'FAIL request still linked';
+  assert (select count(*) from audit_log) = n + 1, 'FAIL one summary line';
+  raise notice 'PASS a barangay in use can be removed (its requests just show no barangay; one activity-log line)';
+
+  select count(*) into nb from barangays;
+  select count(*) into no from organizations;
+  perform remove_organizations(null);
+  perform remove_barangays(null);
+  assert (select count(*) from barangays) = 0 and (select count(*) from organizations) = 0, 'FAIL remove all';
+  assert (select count(*) from entries) > 0, 'FAIL requests lost';
+  raise notice 'PASS remove all (% barangays, % organizations); requests are kept', nb, no;
+end $$;
+reset role;
+select pg_temp.as_user('bbbbbbbb-0000-0000-0000-000000000000');
+do $$ begin
+  begin
+    perform remove_organizations(null);
+    raise exception 'FAIL member removed organizations';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL%' then raise; end if;
+    raise notice 'PASS only an administrator can remove barangays / organizations';
+  end;
+end $$;
+reset role;
