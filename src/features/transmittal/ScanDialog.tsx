@@ -1,4 +1,5 @@
 'use client';
+import { Icon } from '@/components/ui/Icon';
 // Upload button: take/choose photos of letters -> they are stored, scanned (OCR),
 // and a new entry is pre-filled with what was found.
 import { useState } from 'react';
@@ -80,13 +81,13 @@ export function ScanDialog({
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-line px-4 py-6 text-center hover:border-brand-500">
-            <span className="text-3xl">📷</span>
+            <Icon name="camera" size={28} className="text-brand-600" />
             <span className="mt-2 text-sm font-semibold">Take a photo</span>
             <span className="text-xs text-muted">Opens the camera on phones</span>
             <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />
           </label>
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-line px-4 py-6 text-center hover:border-brand-500">
-            <span className="text-3xl">🗂</span>
+            <Icon name="file" size={28} className="text-brand-600" />
             <span className="mt-2 text-sm font-semibold">Choose files</span>
             <span className="text-xs text-muted">JPG / PNG (PDF is attached, not scanned)</span>
             <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />

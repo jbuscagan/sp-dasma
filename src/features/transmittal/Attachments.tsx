@@ -1,4 +1,5 @@
 'use client';
+import { Icon } from '@/components/ui/Icon';
 import { useState } from 'react';
 import { useSession } from '@/features/auth/session';
 import { attachmentUrl, uploadAttachment } from './api';
@@ -32,7 +33,7 @@ export function AttachmentList({ paths, onChange, readOnly }: { paths: string[];
         {paths.map((p, i) => (
           <span key={p} className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-0.5 text-xs">
             <button type="button" className="text-brand-600 hover:underline" onClick={() => open(p)}>
-              📎 File {i + 1}
+              <Icon name="paperclip" size={12} className="mr-0.5 inline" />File {i + 1}
             </button>
             {!readOnly && onChange && (
               <button type="button" className="text-muted hover:text-red-600" aria-label="Remove attachment" onClick={() => onChange(paths.filter((x) => x !== p))}>

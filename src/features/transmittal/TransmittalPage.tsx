@@ -1,31 +1,30 @@
 'use client';
 // Transmittal = live table for one type:
-//   encode in the last row → Submit (done for the day) → Publish (finalized for the week, locked).
-// The checkbox beside # means "received" (fills "Received by" with your name, saved) and also picks the rows to Generate / Publish.
+//   encode in the last row → Submit (done for the day) → Transmit (final, locked; shows in Published (All)).
+// The checkbox = received by this office (its name appears in "Received by", saved) and also picks the rows to Generate / Transmit.
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Modal, PageHeader } from '@/components/ui';
+import { GenerateButton } from '@/components/ui/GenerateButton';
 import { Icon } from '@/components/ui/Icon';
 import { useSession } from '@/features/auth/session';
 import { ExportDialog } from '@/features/reports/ExportDialog';
 import { buildHeader } from '@/features/reports/header';
+import { BulkScanDialog } from '@/features/scan/BulkScanDialog';
 import { useLive } from '@/hooks/useLive';
 import { useReorder } from '@/hooks/useReorder';
-import { fmtMDY, todayIso, weekStart } from '@/lib/dates';
+import { todayIso, weekStart } from '@/lib/dates';
 import type { Entry, EntryInput, TransmittalType } from '@/lib/types';
-import { deleteEntry, listEntries, listTransmittals, reorderEntries, setReceived, setReceivedBy, submitEntries, transmit } from './api';
-import { GenerateButton } from '@/components/ui/GenerateButton';
-import { supabase } from '@/lib/supabase/client';
+import { deleteEntry, listEntries, listTransmittals, reorderEntries, setEntryStatus, setReceived, submitEntries, transmit } from './api';
 import { TYPES } from './config';
 import { EntryForm } from './EntryForm';
 import { matches } from './EntryTable';
-import { BulkScanDialog } from '@/features/scan/BulkScanDialog';
 import { TransmittalSheet } from './TransmittalSheet';
 
-type View = 'open' | 'week' | 'published' | 'all';
+type View = 'open' | 'week' | 'sent' | 'all';
 const VIEWS: [View, string][] = [
-  ['open', 'Not yet published'],
+  ['open', 'Not yet transmitted'],
   ['week', 'This week'],
-  ['published', 'Published'],
+  ['sent', 'Transmitted'],
   ['all', 'Everything'],
 ];
 
@@ -34,18 +33,11 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
   const { committee, profile } = useSession();
   const live = useLive(
     async () => {
-      const [entries, tx, people, staff] = await Promise.all([
+      const [entries, tx] = await Promise.all([
         listEntries({ committeeId: committee?.id, type, status: ['draft', 'submitted', 'transmitted'] }),
         listTransmittals(committee?.id),
-        committee ? supabase().from('profiles').select('encoder_name').eq('committee_id', committee.id) : Promise.resolve({ data: [] }),
-        committee ? supabase().from('employees').select('name').eq('committee_id', committee.id) : Promise.resolve({ data: [] }),
       ]);
-      // Suggestions for "Received by": encoders and employees of this office + names used before.
-      const names = new Set<string>();
-      (people.data ?? []).forEach((p: { encoder_name: string | null }) => p.encoder_name && names.add(p.encoder_name));
-      (staff.data ?? []).forEach((p: { name: string }) => names.add(p.name));
-      entries.forEach((e) => e.received_by && names.add(e.received_by));
-      return { entries, tx, names: Array.from(names).sort() };
+      return { entries, tx };
     },
     ['entries', 'transmittals'],
     [committee?.id, type],
@@ -58,10 +50,10 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
   const [brgy, setBrgy] = useState('');
   const [req, setReq] = useState('');
   const [q, setQ] = useState('');
-  const [form, setForm] = useState<{ open: boolean; entry?: Entry | null; prefill?: EntryInput; scanText?: string }>({ open: false });
+  const [form, setForm] = useState<{ open: boolean; entry?: Entry | null; prefill?: EntryInput }>({ open: false });
   const [scanOpen, setScanOpen] = useState(false);
-  const [dialog, setDialog] = useState<'publish' | 'export' | null>(null);
-  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [confirm, setConfirm] = useState<'submit' | 'transmit' | 'deleteAll' | null>(null);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -69,7 +61,7 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
   const [tick, setTick] = useState<Record<string, boolean>>({});
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
   const isChecked = (e: Entry) => tick[e.id] ?? !!e.received_at;
-  useEffect(() => setTick({}), [live.data]); // fresh data from the database wins (e.g. another encoder un-ticked)
+  useEffect(() => setTick({}), [live.data]); // fresh data from the database wins
 
   const ordered = useMemo(() => {
     if (!localOrder) return all;
@@ -77,7 +69,6 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
     return [...all].sort((a, b) => (idx.get(a.id) ?? 1e9) - (idx.get(b.id) ?? 1e9));
   }, [all, localOrder]);
 
-  const ws = weekStart();
   // Filter choices come from the rows themselves, with counts.
   const countBy = (key: (e: Entry) => string | null) => {
     const m = new Map<string, number>();
@@ -87,18 +78,20 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
     });
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0], 'en', { numeric: true }));
   };
+  const reqOf = (e: Entry) => (type === 'medical' ? e.purpose : e.request);
   const orgs = useMemo(() => countBy((e) => e.organization), [all]); // eslint-disable-line react-hooks/exhaustive-deps
   const brgys = useMemo(() => countBy((e) => e.barangay), [all]); // eslint-disable-line react-hooks/exhaustive-deps
-  const reqs = useMemo(() => countBy((e) => (type === 'medical' ? e.purpose : e.request)), [all, type]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reqs = useMemo(() => countBy(reqOf), [all, type]); // eslint-disable-line react-hooks/exhaustive-deps
   const is = (v: string | null, want: string) => !want || ((v ?? '').trim() || '(blank)') === want;
 
+  const ws = weekStart();
   const rows = useMemo(
     () =>
       ordered.filter((e) => {
         if (view === 'open' && e.status === 'transmitted') return false;
-        if (view === 'published' && e.status !== 'transmitted') return false;
+        if (view === 'sent' && e.status !== 'transmitted') return false;
         if (view === 'week' && e.status === 'transmitted' && (transmittals.get(e.transmittal_id ?? '')?.transmitted_on ?? '') < ws) return false;
-        if (!is(e.organization, org) || !is(e.barangay, brgy) || !is(type === 'medical' ? e.purpose : e.request, req)) return false;
+        if (!is(e.organization, org) || !is(e.barangay, brgy) || !is(reqOf(e), req)) return false;
         return matches(e, cfg.columns, q);
       }),
     [ordered, view, org, brgy, req, q, cfg.columns, transmittals, ws, type], // eslint-disable-line react-hooks/exhaustive-deps
@@ -111,43 +104,61 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
       setLocalOrder(order);
       reorderEntries(order).catch((err) => setNotice({ kind: 'error', text: err.message }));
     },
-    false, // no dragging — rows move by typing a number in #
+    false, // rows move by typing a number in #
   );
 
-  // Ticking = received by me (the name can then be changed in "Received by").
+  // Ticking = received by this office.
   const check = (ids: string[], on: boolean) => {
     setTick((t) => ({ ...t, ...Object.fromEntries(ids.map((id) => [id, on])) }));
-    const unnamed = ids.filter((id) => !all.find((e) => e.id === id)?.received_by);
-    const named = ids.filter((id) => !unnamed.includes(id));
-    Promise.all([
-      setReceived(on ? unnamed : ids, on, on ? profile.encoder_name ?? null : undefined),
-      on ? setReceived(named, true) : Promise.resolve(),
-    ]).catch((err) => setNotice({ kind: 'error', text: err.message }));
+    setReceived(ids, on, committee?.id ?? null).catch((err) => setNotice({ kind: 'error', text: err.message }));
   };
 
   const checkedRows = rows.filter(isChecked);
   const exportRows = checkedRows.length ? checkedRows : rows;
-  const unpublished = rows.filter((e) => e.status !== 'transmitted');
-  const checkedUnpublished = unpublished.filter(isChecked);
-  const toPublish = checkedUnpublished.length ? checkedUnpublished : unpublished;
+  const open = rows.filter((e) => e.status !== 'transmitted');
+  const checkedOpen = open.filter(isChecked);
+  const toTransmit = checkedOpen.length ? checkedOpen : open;
   const drafts = all.filter((e) => e.status === 'draft');
+  const canEditSent = !!committee?.can_edit_published;
+  const deletable = rows.filter((e) => e.status !== 'transmitted' || canEditSent);
 
-  // Essential fields must be filled in before publishing.
+  // Essential fields must be filled in before transmitting.
   const requiredFields = cfg.fields.filter((f) => f.required);
-  const incomplete = (e: Entry) => requiredFields.filter((f) => !String((e as unknown as Record<string, unknown>)[f.key] ?? '').trim()).map((f) => f.label);
-  const notReady = toPublish.filter((e) => incomplete(e).length);
+  const incomplete = (e: Entry) => requiredFields.filter((f) => !String((e as unknown as Record<string, unknown>)[f.key] ?? '').trim()).map((f) => f.label.split(' (')[0]);
+  const notReady = toTransmit.filter((e) => incomplete(e).length);
 
   const remove = async (e: Entry) => {
-    if (!confirm(`Delete the request of ${e.solicitor_name || e.patient_name}? This cannot be undone.`)) return;
-    await deleteEntry(e.id).catch((err) => setNotice({ kind: 'error', text: err.message }));
+    if (!window.confirm(`Delete the request of ${e.solicitor_name || e.patient_name || 'this row'}?`)) return;
+    const p = e.status === 'transmitted' ? setEntryStatus([e.id], 'archived', 'Deleted from Transmittal') : deleteEntry(e.id);
+    await p.catch((err) => setNotice({ kind: 'error', text: err.message }));
   };
 
-  const submitToday = async () => {
+  const run = async (what: 'submit' | 'transmit' | 'deleteAll') => {
     setBusy(true);
     try {
-      const n = await submitEntries(type);
-      setNotice({ kind: 'ok', text: `Submitted ${n} request(s) for today.` });
-      setConfirmSubmit(false);
+      if (what === 'submit') {
+        const n = await submitEntries(type);
+        setNotice({ kind: 'ok', text: `Submitted ${n} request(s) for today.` });
+      } else if (what === 'transmit') {
+        const header = buildHeader(type, committee, toTransmit, todayIso());
+        await transmit({
+          type,
+          code: header.code,
+          week: header.week,
+          covering: header.covering,
+          date: todayIso(),
+          encoderName: profile.encoder_name ?? '',
+          encoderPosition: profile.position ?? '',
+          entryIds: toTransmit.map((e) => e.id),
+        });
+        setNotice({ kind: 'ok', text: `Transmitted ${toTransmit.length} request(s) as ${header.code}. They are now in Published (All).` });
+      } else {
+        const sent = deletable.filter((e) => e.status === 'transmitted').map((e) => e.id);
+        for (const e of deletable.filter((x) => x.status !== 'transmitted')) await deleteEntry(e.id);
+        if (sent.length) await setEntryStatus(sent, 'archived', 'Deleted with "Delete all"');
+        setNotice({ kind: 'ok', text: `Deleted ${deletable.length} request(s).${sent.length ? ' Transmitted ones were moved to Archived.' : ''}` });
+      }
+      setConfirm(null);
     } catch (e) {
       setNotice({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -163,10 +174,10 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
         actions={
           <>
             <Button variant="secondary" onClick={() => setScanOpen(true)}><Icon name="upload" size={16} />Upload &amp; scan</Button>
-            <GenerateButton variant="secondary" disabled={!rows.length} count={checkedRows.length} onClick={() => setDialog('export')} />
-            <Button disabled={!drafts.length} onClick={() => setConfirmSubmit(true)} title="Done encoding for today (still editable)"><Icon name="check" size={16} />Submit</Button>
-            <Button className="bg-accent text-civic-900 hover:bg-accent/90" disabled={!unpublished.length} onClick={() => setDialog('publish')} title="Finalize for the week (locks the records)">
-              <Icon name="lock" size={16} />Publish
+            <GenerateButton variant="secondary" disabled={!rows.length} count={checkedRows.length} onClick={() => setGenerating(true)} />
+            <Button disabled={!drafts.length} onClick={() => setConfirm('submit')} title="Done encoding for today (still editable)"><Icon name="check" size={16} />Submit</Button>
+            <Button className="bg-accent text-civic-900 hover:bg-accent/90" disabled={!open.length} onClick={() => setConfirm('transmit')} title="Send to Published (All) and lock">
+              <Icon name="send" size={16} />Transmit
             </Button>
           </>
         }
@@ -182,29 +193,32 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
       {live.error && <div className="mb-3"><Alert kind="error">{live.error}</Alert></div>}
 
       <div className="card min-w-0">
-        <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
-          <select className="input w-auto" value={view} onChange={(e) => setView(e.target.value as View)} aria-label="Show">
+        <div className="grid grid-cols-2 items-center gap-2 border-b border-line p-3 sm:flex sm:flex-wrap">
+          <select className="input col-span-2 sm:w-auto" value={view} onChange={(e) => setView(e.target.value as View)} aria-label="Show">
             {VIEWS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
-          <select className="input w-auto max-w-[220px]" value={org} onChange={(e) => setOrg(e.target.value)} aria-label="Organization">
+          <select className="input col-span-2 sm:w-auto sm:max-w-[200px]" value={org} onChange={(e) => setOrg(e.target.value)} aria-label="Organization">
             <option value="">All organizations</option>
             {orgs.map(([name, n]) => <option key={name} value={name}>{name} ({n})</option>)}
           </select>
-          <select className="input w-auto max-w-[180px]" value={brgy} onChange={(e) => setBrgy(e.target.value)} aria-label="Barangay">
+          <select className="input sm:w-auto sm:max-w-[170px]" value={brgy} onChange={(e) => setBrgy(e.target.value)} aria-label="Barangay">
             <option value="">All barangays</option>
             {brgys.map(([name, n]) => <option key={name} value={name}>{name} ({n})</option>)}
           </select>
-          <select className="input w-auto max-w-[180px]" value={req} onChange={(e) => setReq(e.target.value)} aria-label={type === 'medical' ? 'Purpose' : 'Request'}>
+          <select className="input sm:w-auto sm:max-w-[170px]" value={req} onChange={(e) => setReq(e.target.value)} aria-label={type === 'medical' ? 'Purpose' : 'Request'}>
             <option value="">{type === 'medical' ? 'All purposes' : 'All requests'}</option>
             {reqs.map(([name, n]) => <option key={name} value={name}>{name} ({n})</option>)}
           </select>
-          {(org || brgy || req) && (
-            <button className="text-xs text-brand-600 hover:underline" onClick={() => { setOrg(''); setBrgy(''); setReq(''); }}>Clear filters</button>
+          <input className="input col-span-2 sm:w-40" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" />
+          {(org || brgy || req || q) && (
+            <button className="text-xs text-brand-600 hover:underline" onClick={() => { setOrg(''); setBrgy(''); setReq(''); setQ(''); }}>Clear</button>
           )}
-          <input className="input w-44" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" />
-          <span className="ml-auto text-xs text-muted">
-            {rows.length} shown · <b className="text-brand-700">{checkedRows.length} ✓ received</b>
-          </span>
+          <div className="col-span-2 flex items-center justify-between gap-3 sm:ml-auto sm:justify-end">
+            <span className="text-xs text-muted">{rows.length} shown · {checkedRows.length} received</span>
+            <Button size="sm" variant="ghost" className="text-red-600" disabled={!deletable.length} onClick={() => setConfirm('deleteAll')}>
+              <Icon name="trash" size={14} />Delete all
+            </Button>
+          </div>
         </div>
         {live.loading ? (
           <div className="p-8 text-center text-sm text-muted">Loading…</div>
@@ -215,8 +229,6 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
             reorder={reorder}
             isChecked={isChecked}
             onCheck={check}
-            receiverNames={live.data?.names ?? []}
-            onReceiverChange={(e, name) => setReceivedBy(e.id, name).catch((err) => setNotice({ kind: 'error', text: err.message }))}
             transmittals={transmittals}
             onDetails={(e) => setForm({ open: true, entry: e })}
             onDelete={remove}
@@ -224,74 +236,65 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
           />
         )}
       </div>
-      <p className="mt-2 text-[11px] text-muted">
-        ✓ = received (your name goes to “Received by”) and included in Generate / Publish · type a number in # to move a row · ● submitted · 🔒 published · Enter on the last row saves it and starts a new one
-      </p>
 
-      <EntryForm type={type} open={form.open} entry={form.entry} prefill={form.prefill} scanText={form.scanText} onClose={() => setForm({ open: false })} />
+      <EntryForm type={type} open={form.open} entry={form.entry} prefill={form.prefill} onClose={() => setForm({ open: false })} />
 
-      <BulkScanDialog open={scanOpen} type={type} onClose={() => setScanOpen(false)} onSaved={(n) => setNotice({ kind: 'ok', text: `Added ${n} scanned request(s) as drafts. Please check them before you Submit.` })} />
+      <BulkScanDialog open={scanOpen} type={type} onClose={() => setScanOpen(false)} onSaved={(n) => setNotice({ kind: 'ok', text: `Added ${n} scanned request(s). Please check them before you Submit.` })} />
 
+      {/* Simple confirmations (no report is generated here) */}
       <Modal
-        open={confirmSubmit}
-        onClose={() => setConfirmSubmit(false)}
-        title="Submit"
+        open={confirm !== null}
+        onClose={() => setConfirm(null)}
+        title={confirm === 'submit' ? 'Submit' : confirm === 'transmit' ? 'Transmit' : 'Delete all'}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setConfirmSubmit(false)}>Cancel</Button>
-            <Button busy={busy} onClick={submitToday}>Submit {drafts.length} request(s)</Button>
+            <Button variant="secondary" onClick={() => setConfirm(null)}>Cancel</Button>
+            {confirm === 'submit' && <Button busy={busy} onClick={() => run('submit')}>Submit {drafts.length}</Button>}
+            {confirm === 'transmit' && <Button busy={busy} disabled={notReady.length > 0} onClick={() => run('transmit')}>Transmit {toTransmit.length}</Button>}
+            {confirm === 'deleteAll' && <Button variant="danger" busy={busy} onClick={() => run('deleteAll')}>Delete {deletable.length}</Button>}
           </>
         }
       >
-        <p className="text-sm">
-          Marks your <b>{drafts.length}</b> draft request(s) as <b>submitted for today</b>. You can still edit them until you <b>Publish</b> at the end of the week.
-        </p>
+        {confirm === 'submit' && (
+          <p className="text-sm">You are about to submit <b>{drafts.length}</b> request(s) for today. You can still edit them until you transmit.</p>
+        )}
+        {confirm === 'transmit' &&
+          (notReady.length ? (
+            <Alert kind="error">
+              {notReady.length} request(s) are missing required fields:
+              <ul className="mt-1 list-disc pl-5">
+                {notReady.slice(0, 8).map((e) => (
+                  <li key={e.id}>#{rows.findIndex((r) => r.id === e.id) + 1} {e.patient_name || e.solicitor_name || '(no name)'}: {incomplete(e).join(', ')}</li>
+                ))}
+              </ul>
+            </Alert>
+          ) : (
+            <p className="text-sm">
+              You are about to transmit {checkedOpen.length ? <>the <b>{toTransmit.length} ticked</b></> : <>all <b>{toTransmit.length}</b></>} request(s).
+              They will appear in <b>Published (All)</b> and can no longer be changed unless an administrator allows it.
+            </p>
+          ))}
+        {confirm === 'deleteAll' && (
+          <p className="text-sm">
+            Delete all <b>{deletable.length}</b> request(s) shown in the table? Drafts are removed permanently; transmitted ones are moved to Archived.
+          </p>
+        )}
       </Modal>
 
       <ExportDialog
-        open={dialog !== null}
-        onClose={() => setDialog(null)}
-        title={dialog === 'publish' ? `Publish ${cfg.label}` : `Generate ${cfg.label} report`}
-        confirmLabel={dialog === 'publish' ? 'Publish, lock & generate' : 'Generate'}
-        entries={dialog === 'publish' ? toPublish : exportRows}
+        open={generating}
+        onClose={() => setGenerating(false)}
+        title={`Generate ${cfg.label}`}
+        entries={exportRows}
         columns={cfg.columns}
         headerColor={cfg.headerColor}
         headerText={cfg.headerText}
         initialDate={todayIso()}
-        makeHeader={(d) => buildHeader(type, committee, dialog === 'publish' ? toPublish : exportRows, d)}
-        received={(e) => (e.received_at ? fmtMDY(e.received_at.slice(0, 10)) : '')}
+        makeHeader={(d) => buildHeader(type, committee, exportRows, d)}
         intro={
-          dialog === 'publish' && notReady.length ? (
-            <Alert kind="error">
-              {notReady.length} request(s) are missing required fields — fill them in first:
-              <ul className="mt-1 list-disc pl-5">
-                {notReady.slice(0, 8).map((e) => (
-                  <li key={e.id}>
-                    #{rows.findIndex((r) => r.id === e.id) + 1} {e.patient_name || e.solicitor_name || '(no name)'}: {incomplete(e).join(', ')}
-                  </li>
-                ))}
-              </ul>
-            </Alert>
-          ) : dialog === 'publish' ? (
-            <Alert kind="warn">
-              Publishing finalizes {checkedUnpublished.length ? <b>the {toPublish.length} ticked</b> : <b>all {toPublish.length}</b>} request(s) for the week. They appear
-              in <b>Published</b> for all offices and become <b>locked</b>.
-            </Alert>
-          ) : (
-            <Alert kind="info">
-              {checkedRows.length ? <>Exporting the <b>{checkedRows.length} ticked</b> row(s).</> : <>No rows are ticked, so all <b>{rows.length}</b> shown rows are exported.</>} Rows print in
-              the order shown.
-            </Alert>
-          )
-        }
-        beforeExport={
-          dialog === 'publish'
-            ? async ({ header, transmitDate, encoderName, encoderPosition }) => {
-                if (notReady.length) throw new Error('Fill in the required fields first (see the list above).');
-                await transmit({ type, code: header.code, week: header.week, covering: header.covering, date: transmitDate, encoderName, encoderPosition, entryIds: toPublish.map((e) => e.id) });
-                setNotice({ kind: 'ok', text: `Published and locked ${toPublish.length} request(s) as ${header.code}.` });
-              }
-            : undefined
+          <Alert kind="info">
+            {checkedRows.length ? <>Generating the <b>{checkedRows.length} ticked</b> row(s).</> : <>No rows are ticked, so all <b>{rows.length}</b> shown rows are included.</>}
+          </Alert>
         }
       />
     </>

@@ -3,6 +3,7 @@
 // whatever the user types. The list floats above the page, so it is never cut off inside scrolling tables.
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { AutoTextarea } from './AutoTextarea';
 
 export interface ComboOption<T = unknown> {
   label: string; // what is shown in the list
@@ -27,6 +28,7 @@ export function Combobox<T>({
   onPaste,
   dataCell,
   ariaLabel,
+  multiline,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -39,18 +41,20 @@ export function Combobox<T>({
   inputClassName?: string;
   disabled?: boolean;
   invalid?: boolean;
-  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
-  onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  onPaste?: (e: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   dataCell?: string;
   ariaLabel?: string;
+  multiline?: boolean; // wraps long text onto more lines (used inside tables)
 }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false); // arrow clicked: show the whole list, not only matches
   const [active, setActive] = useState(0);
   const [rect, setRect] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const listId = useId();
+  const Field = (multiline ? AutoTextarea : 'input') as unknown as React.ElementType;
 
   const matches = useMemo(() => {
     const words = all ? [] : value.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -99,7 +103,7 @@ export function Combobox<T>({
 
   return (
     <div className="relative">
-      <input
+      <Field
         ref={input}
         className={`${inputClassName} ${invalid ? 'bg-red-50 ring-2 ring-inset ring-red-400 dark:bg-red-950/40' : ''}`}
         value={value}
@@ -113,18 +117,18 @@ export function Combobox<T>({
         aria-controls={listId}
         autoComplete="off"
         onFocus={() => setOpen(true)}
-        onBlur={(e) => {
+        onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
           if (list.current?.contains(e.relatedTarget as Node)) return;
           onCommit?.(e.target.value);
         }}
         onPaste={onPaste}
-        onChange={(e) => {
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           onChange(e.target.value);
           setOpen(true);
           setAll(false);
           setActive(0);
         }}
-        onKeyDown={(e) => {
+        onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
           if (open && matches.length) {
             if (e.key === 'ArrowDown') {
               e.preventDefault();

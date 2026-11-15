@@ -1,5 +1,7 @@
 'use client';
 import { GenerateButton } from '@/components/ui/GenerateButton';
+import { Icon } from '@/components/ui/Icon';
+import { PreviewDialog } from '@/features/reports/PreviewDialog';
 // SP Contribution report: beginning balance + additions − disbursements = remaining balance.
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Badge, Button, Empty, Field } from '@/components/ui';
@@ -58,6 +60,10 @@ export function MoneyInput({
 
 const newLine = (kind: ContributionLine['kind'], sort: number, grp: string | null = null): ContributionLine => ({ kind, grp, label: '', amount: 0, sort });
 
+/** Compares only what the user can change (not the save time). */
+const snapshot = (r: ContributionReport, l: ContributionLine[]) =>
+  JSON.stringify({ d: r.report_date, t: r.title, b: Number(r.beginning_balance), n: r.notes ?? '', l: l.map((x) => [x.kind, x.grp ?? '', x.label, Number(x.amount)]) });
+
 export function ContributionTab({ canEdit }: { canEdit: boolean }) {
   const reports = useLive(listContributions, ['sp_contribution_reports']);
   const [selected, setSelected] = useState<string | 'new' | null>(null);
@@ -66,6 +72,9 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  // What was last saved; when the form differs from it there are unsaved edits (button shows "Save").
+  const [savedSnap, setSavedSnap] = useState('');
 
   const list = reports.data ?? [];
   const allLines = useLive(() => listContributionLines(), ['sp_contribution_lines']);
@@ -85,7 +94,10 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
     const r = list.find((x) => x.id === selected);
     if (!r) return;
     setDraft({ ...r });
-    listContributionLines([r.id]).then(setLines);
+    listContributionLines([r.id]).then((l) => {
+      setLines(l);
+      setSavedSnap(snapshot(r, l));
+    });
     setMsg(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
@@ -99,6 +111,7 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
   };
 
   const t = draft ? totals(draft, lines) : null;
+  const dirty = !!draft && (!draft.id || snapshot(draft, lines) !== savedSnap);
   const upd = (i: number, patch: Partial<ContributionLine>) => setLines((l) => l.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
   /** Sums the monitoring amounts released after the previous report, up to this report's date. */
@@ -127,6 +140,9 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
     setBusy(true);
     try {
       const id = await saveContribution({ ...draft, id: draft.id || undefined }, lines.map((l, i) => ({ ...l, sort: i })));
+      const saved = { ...draft, id };
+      setDraft(saved);
+      setSavedSnap(snapshot(saved, lines));
       setSelected(id);
       setMsg({ kind: 'ok', text: 'Report saved.' });
     } catch (e) {
@@ -178,7 +194,7 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
                 {canEdit && <Button size="sm" variant="secondary" onClick={() => setLines((l) => [...l, newLine('addition', l.length)])}>＋ Line</Button>}
               </div>
               {lineRows('addition').map(({ l, i }) => (
-                <div key={i} className="mb-2 grid grid-cols-[1fr_130px_28px] gap-2">
+                <div key={i} className="mb-2 grid grid-cols-[1fr_110px_28px] gap-2 sm:grid-cols-[1fr_130px_28px]">
                   <input className="input" disabled={!canEdit} placeholder="e.g. SP Contribution" value={l.label} onChange={(e) => upd(i, { label: e.target.value })} />
                   <MoneyInput disabled={!canEdit} value={l.amount} onChange={(n) => upd(i, { amount: n ?? 0 })} />
                   {canEdit && <button className="text-muted hover:text-red-600" aria-label="Remove line" onClick={() => setLines((x) => x.filter((_, j) => j !== i))}>✕</button>}
@@ -196,11 +212,11 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
                   </div>
                 )}
               </div>
-              <div className="mb-1 grid grid-cols-[110px_1fr_130px_28px] gap-2 text-[11px] font-semibold uppercase text-muted">
+              <div className="mb-1 hidden grid-cols-[110px_1fr_130px_28px] gap-2 text-[11px] font-semibold uppercase text-muted sm:grid">
                 <span>Group</span><span>Item</span><span className="text-right">Amount</span><span />
               </div>
               {lineRows('disbursement').map(({ l, i }) => (
-                <div key={i} className="mb-2 grid grid-cols-[110px_1fr_130px_28px] gap-2">
+                <div key={i} className="mb-3 grid grid-cols-[1fr_1fr_28px] gap-2 border-b border-line pb-3 sm:mb-2 sm:grid-cols-[110px_1fr_130px_28px] sm:border-0 sm:pb-0 [&>*:nth-child(3)]:col-span-2 sm:[&>*:nth-child(3)]:col-span-1">
                   <input className="input" disabled={!canEdit} placeholder="Solicitation" value={l.grp ?? ''} onChange={(e) => upd(i, { grp: e.target.value })} />
                   <input className="input" disabled={!canEdit} placeholder="CSO / SK / Brgy / name" value={l.label} onChange={(e) => upd(i, { label: e.target.value })} />
                   <MoneyInput disabled={!canEdit} value={l.amount} onChange={(n) => upd(i, { amount: n ?? 0 })} />
@@ -229,7 +245,11 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {canEdit && <Button busy={busy} onClick={save}>Save report</Button>}
+            {canEdit && dirty ? (
+              <Button busy={busy} onClick={save}><Icon name="check" size={16} />Save report</Button>
+            ) : (
+              <Button variant="secondary" disabled={!draft.id} onClick={() => setPreviewing(true)}><Icon name="eye" size={16} />Preview</Button>
+            )}
             <GenerateButton variant="secondary" disabled={!draft.id} onClick={() => setExporting(true)} title={draft.id ? '' : 'Save first'} />
             {canEdit && draft.id && (
               <Button variant="ghost" className="ml-auto text-red-600" onClick={async () => { if (confirm('Delete this report?')) { await deleteContribution(draft.id); setSelected(null); setDraft(null); } }}>
@@ -238,6 +258,12 @@ export function ContributionTab({ canEdit }: { canEdit: boolean }) {
             )}
           </div>
 
+          <PreviewDialog
+            open={previewing}
+            onClose={() => setPreviewing(false)}
+            title={`Preview — SP Contribution ${fmtLong(draft.report_date)}`}
+            pages={[{ label: 'SP Contribution report', render: () => renderLedger(buildLedger(draft, lines), 'pdf', 'A4', 'portrait') }]}
+          />
           <FormatDialog
             open={exporting}
             onClose={() => setExporting(false)}

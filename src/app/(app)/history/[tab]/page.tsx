@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { OwnHistory } from '@/features/history/OwnHistory';
-import { PublishedHistory } from '@/features/history/PublishedHistory';
+import { PublishedHistory } from '@/features/history/published/PublishedHistory';
 import { ArchivedHistory } from '@/features/history/ArchivedHistory';
 
 const PAGES = { own: OwnHistory, published: PublishedHistory, archived: ArchivedHistory };

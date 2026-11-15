@@ -161,14 +161,6 @@ export function DtrSettingsForm({ committeeId, rules, settings }: { committeeId:
       </section>
 
       <section className="card p-4">
-        <h3 className="mb-1 text-sm font-semibold">Employee signature line</h3>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={s.employeeNameShow} onChange={(e) => setS({ ...s, employeeNameShow: e.target.checked })} />
-          Print the employee’s name on the “Employee’s signature” line, with their e-signature over it (upload it in Employees or Planner)
-        </label>
-      </section>
-
-      <section className="card p-4">
         <h3 className="mb-1 text-sm font-semibold">Page layout</h3>
         <div className="mb-3 grid gap-3 sm:grid-cols-2">
           <label className={`cursor-pointer rounded-xl border p-3 text-sm ${s.layout !== 'single' ? 'border-brand-600 bg-brand-50' : 'border-line'}`}>

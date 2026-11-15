@@ -26,8 +26,8 @@ export const NAV: NavGroup[] = [
   {
     title: 'Account',
     items: [
-      { href: '/settings', label: 'Settings', icon: 'settings' },
       { href: '/admin', label: 'Admin', icon: 'shield', adminOnly: true },
+      { href: '/settings', label: 'Settings', icon: 'settings' },
     ],
   },
 ];

@@ -1,4 +1,5 @@
 'use client';
+import { Icon } from '@/components/ui/Icon';
 import { GenerateButton } from '@/components/ui/GenerateButton';
 // History › Transmitted (own): every weekly publication of my office, with lock / revision controls.
 import { useMemo, useState } from 'react';
@@ -16,9 +17,9 @@ import { FlagDialog } from './FlagDialog';
 import { useHistoryData } from './useHistoryData';
 
 export function LockBadge({ t }: { t: Transmittal }) {
-  if (t.revision_open) return <Badge color="amber">✎ Revision open</Badge>;
-  if (t.revision_requested_at) return <Badge color="blue">⏳ Revision requested</Badge>;
-  return <Badge color="green">🔒 Locked</Badge>;
+  if (t.revision_open) return <Badge color="amber"><Icon name="pencil" size={11} />Revision open</Badge>;
+  if (t.revision_requested_at) return <Badge color="blue"><Icon name="clock" size={11} />Revision requested</Badge>;
+  return <Badge color="green"><Icon name="lock" size={11} />Locked</Badge>;
 }
 
 export function OwnHistory() {
@@ -63,7 +64,7 @@ export function OwnHistory() {
           return (
             <div key={t.id} className="card">
               <div className="flex flex-wrap items-center gap-3 p-4">
-                <button className="min-w-0 flex-1 text-left" onClick={() => setOpenId(isOpen ? null : t.id)}>
+                <button className="min-w-0 basis-full text-left sm:basis-0 sm:flex-1" onClick={() => setOpenId(isOpen ? null : t.id)}>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm font-bold">{t.code}</span>
                     <Badge color="blue">{TYPES[t.type].label}</Badge>
@@ -77,7 +78,7 @@ export function OwnHistory() {
                 </button>
                 <GenerateButton size="sm" variant="secondary" onClick={() => setRegen(t)} />
                 {t.revision_open ? (
-                  <Button size="sm" onClick={() => run(setRevisionOpen(t.id, false))} title="Done with changes — lock it again">🔒 Lock again</Button>
+                  <Button size="sm" onClick={() => run(setRevisionOpen(t.id, false))} title="Done with changes — lock it again"><Icon name="lock" size={14} />Lock again</Button>
                 ) : isAdmin ? (
                   <Button size="sm" variant="secondary" onClick={() => run(setRevisionOpen(t.id, true))}>Allow revision</Button>
                 ) : !t.revision_requested_at ? (
@@ -117,7 +118,7 @@ export function OwnHistory() {
                     extra={[
                       {
                         header: 'Received',
-                        cell: (e) => (e.received_at ? <span className="text-xs font-semibold text-brand-700">✓ {fmtLong(e.received_at)}</span> : <span className="text-xs text-muted">—</span>),
+                        cell: (e) => (e.received_at ? <span className="text-xs font-semibold text-brand-700">{e.received_by || 'Received'}<br /><span className="font-normal text-muted">{fmtLong(e.received_at)}</span></span> : <span className="text-xs text-muted">—</span>),
                       },
                     ]}
                     actions={(e) => {

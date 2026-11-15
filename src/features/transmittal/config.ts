@@ -4,6 +4,7 @@
 // ============================================================================
 import type { Entry, EntryInput, TransmittalType } from '@/lib/types';
 import { fmtMDY } from '@/lib/dates';
+import { HEADER_COLORS } from '@/features/reports/colors';
 
 export type FieldKind =
   | 'date'
@@ -159,7 +160,7 @@ export const TYPES: Record<TransmittalType, TypeConfig> = {
     label: 'CSO / NGO',
     code: 'NGO',
     title: 'TRANSMITTAL OF SOLICITATION REQUESTS – NGO',
-    headerColor: '#cfe2f3',
+    headerColor: HEADER_COLORS.green.hex,
     headerText: '#000000',
     fields: [F.date, F.solicitor, F.org, F.brgy, F.request, F.contact, F.event, F.remarks],
     columns: [C.date, { ...C.name, width: 20 }, { ...C.org, width: 26 }, C.request, C.contact, C.event],
@@ -173,14 +174,14 @@ export const TYPES: Record<TransmittalType, TypeConfig> = {
     '#000000',
     'Christmas Party',
   ),
-  barangay: solicitationType('barangay', 'Barangay', 'BRGY', 'TRANSMITTAL OF SOLICITATION REQUESTS – BARANGAY', '#d9ead3'),
-  sk: solicitationType('sk', 'SK', 'SK', 'TRANSMITTAL OF SOLICITATION REQUESTS – SK', '#fff2cc'),
+  barangay: solicitationType('barangay', 'Barangay', 'BRGY', 'TRANSMITTAL OF SOLICITATION REQUESTS – BARANGAY', HEADER_COLORS.violet.hex),
+  sk: solicitationType('sk', 'SK', 'SK', 'TRANSMITTAL OF SOLICITATION REQUESTS – SK', HEADER_COLORS.violet.hex),
   medical: {
     type: 'medical',
     label: 'Medical',
     code: 'MA',
     title: 'TRANSMITTAL OF MEDICAL ASSISTANCE REQUEST',
-    headerColor: '#c9daf8',
+    headerColor: HEADER_COLORS.skyBlue.hex,
     headerText: '#000000',
     fields: [
       F.date,
@@ -208,7 +209,7 @@ export const TYPES: Record<TransmittalType, TypeConfig> = {
     label: 'Personal',
     code: 'PER',
     title: 'TRANSMITTAL OF PERSONAL REQUESTS',
-    headerColor: '#ead1dc',
+    headerColor: HEADER_COLORS.blank.hex,
     headerText: '#000000',
     fields: [
       F.date,

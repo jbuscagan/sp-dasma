@@ -138,14 +138,11 @@ export async function uploadBudgetAttachment(file: File): Promise<string> {
 
 // ---------- barangay annual budgets ----------
 export async function listBarangayBudgets(year: number): Promise<BarangayBudget[]> {
-  const rows = must(await supabase().from('barangay_budgets').select('*').eq('year', year)) as BarangayBudget[];
-  return rows.map((r) => ({ ...r, brgy_budget: num(r.brgy_budget), sk_budget: num(r.sk_budget) }));
+  // The barangay name is stored once (in "barangays"); each budget row links to it.
+  const rows = must(await supabase().from('barangay_budgets').select('id, year, brgy_budget, sk_budget, remarks, barangays(name)').eq('year', year)) as unknown as (Omit<BarangayBudget, 'barangay'> & { barangays: { name: string } | null })[];
+  return rows.map(({ barangays, ...r }) => ({ ...r, barangay: barangays?.name ?? '', brgy_budget: num(r.brgy_budget), sk_budget: num(r.sk_budget) }));
 }
 
 export async function upsertBarangayBudget(b: BarangayBudget) {
-  must(
-    await supabase()
-      .from('barangay_budgets')
-      .upsert({ year: b.year, barangay: b.barangay, brgy_budget: b.brgy_budget, sk_budget: b.sk_budget, remarks: b.remarks, updated_at: new Date().toISOString() }, { onConflict: 'year,barangay' }),
-  );
+  must(await supabase().rpc('save_barangay_budget', { p_year: b.year, p_barangay: b.barangay, p_brgy: b.brgy_budget, p_sk: b.sk_budget, p_remarks: b.remarks }));
 }

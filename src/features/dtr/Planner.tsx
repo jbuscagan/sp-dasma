@@ -1,4 +1,5 @@
 'use client';
+import { Icon } from '@/components/ui/Icon';
 // The DTR planner (same steps as the Apps Script dialog): pick dates and people,
 // add special days, generate attendance, then create one merged PDF.
 import { useEffect, useRef, useState } from 'react';
@@ -194,14 +195,10 @@ export function Planner({
         {!employees.length && <Alert kind="warn">No employees yet. Add them in the Employees tab.</Alert>}
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {employees.map((e) => (
-            <div key={e.id} className="flex items-start gap-2 rounded-lg border border-line p-2.5 text-sm hover:bg-brand-50/50">
-              <input type="checkbox" className="mt-0.5" checked={people.has(e.id)} onChange={() => togglePerson(e.id)} aria-label={`Select ${e.name}`} />
+            <div key={e.id} className="flex items-center gap-2 rounded-lg border border-line p-2.5 text-sm hover:bg-brand-50/50">
+              <input type="checkbox" checked={people.has(e.id)} onChange={() => togglePerson(e.id)} aria-label={`Select ${e.name}`} />
               <span className="min-w-0 flex-1">
                 <button type="button" className="font-medium hover:underline" onClick={() => togglePerson(e.id)}>{e.name}</button>
-                <span className="block text-xs text-muted">{[e.position, e.dept].filter(Boolean).join(', ')}</span>
-                <span className={`mt-1 inline-block text-[11px] font-semibold ${e.signature_path ? 'text-emerald-700 dark:text-emerald-300' : 'text-muted'}`}>
-                  {e.signature_path ? '✍ E-signature ready' : 'No e-signature (upload it in Employees)'}
-                </span>
               </span>
             </div>
           ))}
@@ -285,7 +282,7 @@ export function Planner({
           <div className="mt-3">
             <Alert kind={result.kind === 'error' ? 'error' : 'ok'}>
               {result.lines.map((l) => <div key={l}>{l}</div>)}
-              {result.warnings?.map((w) => <div key={w} className="text-amber-700 dark:text-amber-300">⚠ {w}</div>)}
+              {result.warnings?.map((w) => <div key={w} className="flex items-start gap-1 text-amber-700 dark:text-amber-300"><Icon name="alert" size={14} className="mt-0.5" />{w}</div>)}
             </Alert>
           </div>
         )}

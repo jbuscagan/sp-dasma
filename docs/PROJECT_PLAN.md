@@ -55,23 +55,9 @@ Supabase (Postgres database + Auth + File storage + Realtime)
 
 **Note:** Vercel's Hobby plan is for non-commercial use. For official government use, check with your IT office whether a Pro plan or an LGU-owned account is required.
 
-### Modular code ("feature-based modules")
+### Modular code
 
-The structure you described is called **modular architecture** or **separation of concerns**. Each feature lives in its own folder under `src/features/`:
-
-```
-src/features/
-  transmittal/  config.ts  ← THE place to change columns, titles, codes, dropdown options
-                api.ts       (database calls)   EntryForm / EntryTable / ScanDialog / TransmittalPage
-  reports/      header.ts (code & covering), build.ts, pdf.ts, docx.ts, xlsx.ts, ExportDialog, ReportFilterPage
-  history/      OwnHistory, PublishedHistory, ArchivedHistory, FlagDialog, discrepancies.ts
-  dtr/          engine.ts (pure DTR logic, unit-tested), layout.ts (form positions), pdf.ts, Planner …
-  admin/ settings/ dashboard/ auth/ shell/ directory/
-src/app/        thin route files that just render a feature page
-supabase/migrations/   numbered SQL files (never edit an old one; add a new one)
-```
-
-**Example:** adding a "Remarks" column to the NGO report means editing one array in `src/features/transmittal/config.ts`. The form, the table, the PDF, Word and Excel all follow automatically.
+See **docs/ARCHITECTURE.md** for the programming method, the folder structure and the database design (normalization).
 
 ## 4. How we work together (to save tokens and stay consistent)
 
@@ -132,6 +118,17 @@ supabase/migrations/   numbered SQL files (never edit an old one; add a new one)
 - **Admin:** "Budget encoder" toggle, and **Import list** for barangays and organizations (Excel, CSV or paste). 16 organizations from your samples are pre-loaded.
 - **Reports:** no line under the encoder's name. ₱ and ñ print correctly (embedded fonts).
 - **Look and feel:** follows the Philippine Government Web Template style: a top bar (Republic of the Philippines · Province of Cavite · City of Dasmariñas) with Philippine Standard Time, a navy-and-gold sidebar, heritage-church and sun-ray line art, and an official footer.
+
+### Sprint 5 — revisions round (done)
+- Transmittal: Received By shows the receiving office automatically and sits before Remarks; Publish renamed **Transmit** (confirmation only); Delete all; no horizontal scrollbar; phone/name/barangay clean-up when typing or pasting; Date of event From–To calendar.
+- Published (All): Received By column (optional in reports), working Checks with a details window, separate checkbox column, **Publish** of a weekly combined list (admin + allowed offices) and a **Weekly published** tab; report header only on page 1; optional Note; header colour swatches + custom colour.
+- DTR: cut-offs 21–5 and 6–20; Planner shows names only; employee signature without printed name; both signature lines level and equal.
+- Admin: Budget / Publish / Edit-published permissions per office ("Allowed" checkboxes); city logo upload. Sidebar: Admin before Settings, gear icon. Dashboard: greeting fixed, counts = published records. Capitalised titles, hidden scrollbars.
+
+### Sprint 6 — normalization & structure (done)
+- Database normalized (0009): organization, barangay and receiving office stored once and linked by id; budget and publish permissions in one place each. Requests are read and saved through the view `entry_list`.
+- Code: transmittal data calls split by topic (`transmittal/api/`), Admin split into one file per tab, Published (All) split into parts, table names in `lib/db.ts`.
+- Barangays can be renamed in Admin (changes every record at once); a barangay in use cannot be deleted.
 
 ## 6. Suggested improvements (for your decision)
 

@@ -105,10 +105,10 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{title}</h1>
+        <h1 className="text-xl font-bold uppercase tracking-tight sm:text-2xl">{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap [&>*]:w-full sm:[&>*]:w-auto">{actions}</div>}
     </div>
   );
 }
@@ -129,7 +129,7 @@ export function Alert({ kind = 'info', children }: { kind?: 'info' | 'error' | '
 
 export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: [T, string][] }) {
   return (
-    <div className="mb-4 flex gap-1 overflow-x-auto border-b border-line">
+    <div className="mb-4 flex flex-wrap gap-x-1 border-b border-line">
       {items.map(([k, label]) => (
         <button
           key={k}

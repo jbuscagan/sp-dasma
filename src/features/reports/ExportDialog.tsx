@@ -10,6 +10,8 @@ import { exportReport } from './export';
 import type { ReportHeader } from './header';
 import { PAPERS, type ExportFormat, type Orientation, type PaperKey } from './types';
 import { FormatPicker } from './FormatPicker';
+import { DEFAULT_NOTE } from './types';
+import { SWATCHES, textOn } from './colors';
 
 export interface ExportRequest {
   header: ReportHeader;
@@ -80,6 +82,8 @@ export function ExportDialog<T = Entry>({
   const [paper, setPaper] = useState<PaperKey>('A4');
   const [orientation, setOrientation] = useState<Orientation>('landscape');
   const [withReceived, setWithReceived] = useState(false);
+  const [color, setColor] = useState(headerColor);
+  const [withNote, setWithNote] = useState(true);
   const [blankRows, setBlankRows] = useState(0);
   const [encoder, setEncoder] = useState({ name: '', position: '' });
   const [busy, setBusy] = useState(false);
@@ -94,6 +98,8 @@ export function ExportDialog<T = Entry>({
     setDate(initialDate);
     setHeader(makeHeader(initialDate));
     setEncoder({ name: profile.encoder_name ?? '', position: profile.position ?? '' });
+    setColor(headerColor);
+    setWithNote(note !== '');
     setError('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -119,11 +125,11 @@ export function ExportDialog<T = Entry>({
           header,
           columns: o.columns,
           entries,
-          headerColor,
-          headerText,
+          headerColor: color,
+          headerText: color.toLowerCase() === headerColor.toLowerCase() ? headerText : textOn(color),
           encoderName: showEncoder ? encoder.name : '',
           encoderPosition: showEncoder ? encoder.position : '',
-          note,
+          note: withNote ? (note || DEFAULT_NOTE) : '',
           footRow: o.footRow,
           paper,
           orientation,
@@ -214,12 +220,40 @@ export function ExportDialog<T = Entry>({
               <input type="number" min={0} max={30} className="input" value={blankRows} onChange={(e) => setBlankRows(Math.max(0, Math.min(30, Number(e.target.value) || 0)))} />
             </Field>
           </div>
-          {received && (
-            <label className="mt-3 flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={withReceived} onChange={(e) => setWithReceived(e.target.checked)} />
-              Include a “Received” column (date each request was ticked as received)
+          <div className="mt-3">
+            <span className="label">Table header colour</span>
+            <div className="flex flex-wrap items-center gap-2">
+              {SWATCHES.map((sw) => (
+                <button
+                  key={sw.hex}
+                  type="button"
+                  title={sw.label}
+                  aria-label={sw.label}
+                  aria-pressed={color.toLowerCase() === sw.hex}
+                  onClick={() => setColor(sw.hex)}
+                  className={`h-8 w-8 rounded-lg border-2 ${color.toLowerCase() === sw.hex ? 'border-brand-600 ring-2 ring-brand-500/30' : 'border-line'}`}
+                  style={{ background: sw.hex }}
+                />
+              ))}
+              <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-line px-2 py-1 text-xs" title="Any colour">
+                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-6 w-6 cursor-pointer border-0 bg-transparent p-0" />
+                Custom
+              </label>
+              <span className="rounded px-2 py-1 text-xs font-semibold" style={{ background: color, color: textOn(color), border: '1px solid rgb(var(--line))' }}>Preview</span>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={withNote} onChange={(e) => setWithNote(e.target.checked)} />
+              Include the note (“{note || DEFAULT_NOTE}”)
             </label>
-          )}
+            {received && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={withReceived} onChange={(e) => setWithReceived(e.target.checked)} />
+                Include “Received by”
+              </label>
+            )}
+          </div>
         </section>
       </div>
     </Modal>

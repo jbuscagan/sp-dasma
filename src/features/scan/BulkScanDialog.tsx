@@ -200,7 +200,7 @@ export function BulkScanDialog({
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-line px-4 py-6 text-center hover:border-brand-500">
-              <span className="text-3xl">📷</span>
+              <Icon name="camera" size={28} className="text-brand-600" />
               <span className="mt-2 text-sm font-semibold">Take a photo</span>
               <span className="text-xs text-muted">Opens the camera on phones</span>
               <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />
@@ -216,7 +216,7 @@ export function BulkScanDialog({
             <ul className="divide-y divide-line rounded-lg border border-line text-sm">
               {files.map((f, i) => (
                 <li key={f.name + f.size + i} className="flex items-center justify-between gap-2 px-3 py-1.5">
-                  <span className="truncate">{/pdf$/i.test(f.name) ? '📄' : '🖼'} {f.name} <span className="text-xs text-muted">({Math.round(f.size / 1024)} KB)</span></span>
+                  <span className="flex min-w-0 items-center gap-1.5 truncate"><Icon name={/pdf$/i.test(f.name) ? 'file' : 'image'} size={15} className="text-muted" />{f.name} <span className="text-xs text-muted">({Math.round(f.size / 1024)} KB)</span></span>
                   <button type="button" className="text-xs text-red-600" onClick={() => setFiles((all) => all.filter((_, j) => j !== i))}>Remove</button>
                 </li>
               ))}
@@ -279,7 +279,7 @@ export function BulkScanDialog({
                             {!onConfirm && d.detectedType && d.detectedType !== type && (
                               <div className="mb-1"><Badge color="blue">From a {TYPES[d.detectedType].label} transmittal</Badge><div className="mt-0.5 text-[11px] text-muted">Import it on the {TYPES[d.detectedType].label} page</div></div>
                             )}
-                            {dup && <Badge color="amber" title={dup}>⚠ Possible duplicate</Badge>}
+                            {dup && <Badge color="amber" title={dup}><Icon name="alert" size={11} />Possible duplicate</Badge>}
                             {dup && <div className="mt-0.5 text-[11px] text-muted">{dup}</div>}
                             {missing(d).length > 0 && d.include && <div className="mt-1 text-[11px] text-red-600">Fill in required fields or untick</div>}
                           </td>

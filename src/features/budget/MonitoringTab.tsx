@@ -1,7 +1,8 @@
 'use client';
+import { Icon } from '@/components/ui/Icon';
 // Weekly solicitation monitoring: only the APPROVED organizations that an SPM / BM will give money to.
 // Rows come from published requests, manual typing, or an uploaded/scanned letter.
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Badge, Button, Empty, Field, Modal } from '@/components/ui';
 import { Combobox } from '@/components/ui/Combobox';
 import { EventDateInput } from '@/components/ui/EventDateInput';
@@ -9,6 +10,9 @@ import { GenerateButton } from '@/components/ui/GenerateButton';
 import { useDirectory } from '@/features/directory/useDirectory';
 import { useSession } from '@/features/auth/session';
 import { ExportDialog } from '@/features/reports/ExportDialog';
+import { PreviewDialog } from '@/features/reports/PreviewDialog';
+import { buildReport } from '@/features/reports/build';
+import { renderReport } from '@/features/reports/export';
 import { AttachmentList } from '@/features/transmittal/Attachments';
 import { BulkScanDialog } from '@/features/scan/BulkScanDialog';
 import { listEntries } from '@/features/transmittal/api';
@@ -136,12 +140,29 @@ function BatchEditor({
   const [scan, setScan] = useState(false);
   const [print, setPrint] = useState(false);
   const [withGiver, setWithGiver] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  // Rows with typed-but-not-yet-saved changes, and the last saved title / covering.
+  const [unsavedRows, setUnsavedRows] = useState<Set<string>>(new Set());
+  const [savedB, setSavedB] = useState(batch);
+  const markRow = useCallback((id: string, on: boolean) => {
+    setUnsavedRows((s) => {
+      if (s.has(id) === on) return s;
+      const n = new Set(s);
+      if (on) n.add(id);
+      else n.delete(id);
+      return n;
+    });
+  }, []);
+  const dirty = unsavedRows.size > 0 || (b.title ?? '') !== (savedB.title ?? '') || (b.covering ?? '') !== (savedB.covering ?? '');
+  /** Leaving the field being typed in saves it (every field saves itself when you leave it). */
+  const saveNow = () => (document.activeElement as HTMLElement | null)?.blur();
   const givers = useMemo(() => committees.map((c) => ({ label: c.spm_name ? `SPM ${c.spm_name}` : c.name, value: c.spm_name ? `SPM ${c.spm_name}` : c.name })), [committees]);
 
   const persist = async (next: MonitoringBatch) => {
     setB(next);
     try {
       await saveBatch(next);
+      setSavedB(next);
     } catch (e) {
       setMsg({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
     }
@@ -206,7 +227,7 @@ function BatchEditor({
           <Empty>No organizations yet. Add the approved ones that will receive money.</Empty>
         ) : (
           <div className="overflow-x-auto">
-            <table className="table-base text-[13px] [&_td]:px-1.5 [&_th]:px-1.5">
+            <table className="stack-wide table-base text-[13px] [&_td]:px-1.5 [&_th]:px-1.5">
               <thead>
                 <tr>
                   <th className="w-8">No.</th><th>Requestor</th><th>Association / Purpose</th><th>Date of event</th><th>Contact</th>
@@ -215,7 +236,7 @@ function BatchEditor({
               </thead>
               <tbody>
                 {items.map((it, n) => (
-                  <ItemRow key={it.id} n={n + 1} item={it} batchId={b.id} canEdit={canEdit} givers={givers} orgs={dir.orgOptions} />
+                  <ItemRow key={it.id} n={n + 1} item={it} batchId={b.id} canEdit={canEdit} givers={givers} orgs={dir.orgOptions} onUnsaved={markRow} />
                 ))}
                 <tr className="font-semibold">
                   <td colSpan={5} className="text-right">TOTAL</td>
@@ -229,7 +250,12 @@ function BatchEditor({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <GenerateButton disabled={!items.length} onClick={() => setPrint(true)} title="Downloads two files: claim sheet (signature) and amount report" />
+        {canEdit && dirty ? (
+          <Button onClick={saveNow}><Icon name="check" size={16} />Save</Button>
+        ) : (
+          <Button variant="secondary" disabled={!items.length} onClick={() => setPreviewing(true)}><Icon name="eye" size={16} />Preview</Button>
+        )}
+        <GenerateButton disabled={!items.length || dirty} onClick={() => setPrint(true)} title={dirty ? 'Save your changes first' : 'Downloads two files: claim sheet (signature) and amount report'} />
         <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={withGiver} onChange={(e) => setWithGiver(e.target.checked)} /> Include “Given by”</label>
         {canEdit && (
           <Button variant="ghost" className="ml-auto text-red-600" onClick={async () => { if (confirm('Delete this whole list?')) { await deleteBatch(b.id); onDeleted(); } }}>
@@ -259,6 +285,26 @@ function BatchEditor({
             })),
           );
         }}
+      />
+
+      <PreviewDialog
+        open={previewing}
+        onClose={() => setPreviewing(false)}
+        title={`Preview — ${titleOf(b)}`}
+        pages={[
+          { label: '1. Claim sheet', columns: claimCols, footRow: undefined },
+          { label: '2. Amount', columns: amountCols, footRow: ['', '', '', '', 'TOTAL', ...(withGiver ? [''] : []), peso(total)] },
+        ].map((o) => ({
+          label: o.label,
+          render: () =>
+            renderReport(
+              buildReport<MonitoringItem>({
+                header: header(b.released_on), columns: o.columns, entries: items, footRow: o.footRow,
+                headerColor: '#b6d7a8', headerText: '#000000', encoderName: '', encoderPosition: '', note: '', paper: 'FOLIO', orientation: 'landscape',
+              }),
+              'pdf',
+            ),
+        }))}
       />
 
       {print && (
@@ -297,6 +343,7 @@ function ItemRow({
   canEdit,
   givers,
   orgs,
+  onUnsaved,
 }: {
   n: number;
   item: MonitoringItem;
@@ -304,13 +351,25 @@ function ItemRow({
   canEdit: boolean;
   givers: { label: string; value: string }[];
   orgs: { label: string; value: string }[];
+  onUnsaved: (id: string, unsaved: boolean) => void;
 }) {
   const [v, setV] = useState(item);
+  const [saved, setSaved] = useState(item); // last values known to be in the database
   const [files, setFiles] = useState(false);
-  useEffect(() => setV(item), [item]);
+  useEffect(() => {
+    setV(item);
+    setSaved(item);
+  }, [item]);
+  // Tell the list whether this row has changes that are not saved yet.
+  const changed = (Object.keys(v) as (keyof MonitoringItem)[]).some((k) => k !== 'attachment_paths' && String(v[k] ?? '') !== String(saved[k] ?? ''));
+  useEffect(() => {
+    const id = item.id ?? '';
+    onUnsaved(id, changed);
+    return () => onUnsaved(id, false);
+  }, [changed, item.id, onUnsaved]);
   const commit = (next: MonitoringItem) => {
     setV(next);
-    saveItem(batchId, next);
+    saveItem(batchId, next).then(() => setSaved(next)).catch(() => {});
   };
   const text = (k: keyof MonitoringItem, w = '') => (
     <input className={`input py-1 ${w}`} disabled={!canEdit} value={(v[k] as string) ?? ''} onChange={(e) => setV({ ...v, [k]: e.target.value })} onBlur={() => v !== item && commit(v)} />
@@ -356,7 +415,7 @@ function ItemRow({
         />
       </td>
       <td>
-        <button className="text-xs text-brand-600 hover:underline" onClick={() => setFiles(true)}>📎 {v.attachment_paths.length}</button>
+        <button className="text-xs text-brand-600 hover:underline" onClick={() => setFiles(true)}><Icon name="paperclip" size={13} />{v.attachment_paths.length}</button>
         <Modal open={files} onClose={() => { setFiles(false); commit(v); }} title="Attachments">
           <AttachmentList paths={v.attachment_paths} readOnly={!canEdit} onChange={canEdit ? (p) => setV({ ...v, attachment_paths: p }) : undefined} />
         </Modal>

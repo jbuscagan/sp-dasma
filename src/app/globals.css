@@ -45,7 +45,7 @@ body { @apply bg-surface text-ink antialiased; }
   }
   .label { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-muted; }
   .table-base { @apply w-full border-collapse text-sm; }
-  .table-base th { @apply sticky top-0 z-10 border-b border-line bg-brand-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-brand-700; }
+  .table-base th { @apply sticky top-0 z-10 border-b border-line bg-brand-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-brand-700; }
   .table-base td { @apply border-b border-line px-3 py-2 align-top; }
   .table-base tr:hover td { @apply bg-brand-50/40; }
 }
@@ -53,3 +53,88 @@ body { @apply bg-surface text-ink antialiased; }
 /* Scrolls, but without showing a scrollbar (sidebar menu). */
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* No visible scrollbars anywhere (pages still scroll with the mouse wheel, touch pad or finger). */
+* { scrollbar-width: none; }
+*::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* Section titles in capital letters (e.g. "CHRISTMAS PARTY"). */
+main h1, main h2, main h3, [role='dialog'] h2 { text-transform: uppercase; letter-spacing: 0.02em; }
+
+/* Column headers are centered in every table. */
+th { text-align: center !important; vertical-align: middle; }
+
+/* ---------------------------------------------------------------------------
+   PHONES (narrower than 768px): tables become cards.
+   Each row = one card; each cell = one line "LABEL  value" (labels come from the
+   table header, see src/features/shell/StackTables.tsx). Checkbox, row number and
+   action buttons sit together on one line.
+   --------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  table.stack, table.stack tbody { display: block; width: 100% !important; min-width: 0 !important; }
+  table.stack thead, table.stack colgroup { display: none; }
+  table.stack tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.5rem;
+    margin: 0.625rem 0; padding: 0.5rem 0.75rem;
+    border: 1px solid rgb(var(--line)); border-radius: 0.75rem; background: rgb(var(--panel));
+  }
+  table.stack td {
+    display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.5rem; align-items: start;
+    width: 100% !important; min-width: 0 !important; max-width: none !important;
+    padding: 0.3rem 0 !important; border: 0 !important; text-align: left !important; white-space: normal !important;
+  }
+  table.stack td::before {
+    content: attr(data-label); padding-top: 0.35rem;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: rgb(var(--muted));
+  }
+  /* Cells without a column name (e.g. a TOTAL row) use the whole width. */
+  table.stack td[data-label=''] { grid-template-columns: minmax(0, 1fr); }
+  table.stack td[data-label='']::before { display: none; }
+  /* Checkbox / number / buttons: small, side by side. Buttons go to the right. */
+  table.stack td[data-compact='true'] { display: flex; width: auto !important; align-items: center; gap: 0.25rem; }
+  table.stack td[data-compact='true']:last-child { margin-left: auto; }
+  table.stack td[data-label='#']::before, table.stack td[data-label='No.']::before { padding: 0; }
+  /* Everything inside a cell goes in the value column (never under the label). */
+  table.stack td > * { min-width: 0; grid-column: 2; }
+  table.stack td[data-label=''] > * { grid-column: 1; }
+  table.stack td[data-compact='true'] > * { width: auto; }
+  /* Read-only cells with nothing in them are left out of the card. */
+  table.stack td:empty { display: none; }
+  /* The card itself scrolls the page, so inner wrappers must not add sideways scrolling. */
+  .overflow-x-auto:has(> table.stack) { overflow-x: visible; }
+}
+
+/* Tables with many columns (class "stack-wide") also become cards on tablets and small laptops. */
+@media (min-width: 768px) and (max-width: 1279px) {
+  table.stack.stack-wide, table.stack.stack-wide tbody { display: block; width: 100% !important; min-width: 0 !important; }
+  table.stack.stack-wide thead, table.stack.stack-wide colgroup { display: none; }
+  table.stack.stack-wide tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.5rem;
+    margin: 0.625rem 0; padding: 0.5rem 0.75rem;
+    border: 1px solid rgb(var(--line)); border-radius: 0.75rem; background: rgb(var(--panel));
+  }
+  table.stack.stack-wide td {
+    display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.5rem; align-items: start;
+    width: 100% !important; min-width: 0 !important; max-width: none !important;
+    padding: 0.3rem 0 !important; border: 0 !important; text-align: left !important; white-space: normal !important;
+  }
+  table.stack.stack-wide td::before {
+    content: attr(data-label); padding-top: 0.35rem;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: rgb(var(--muted));
+  }
+  /* Cells without a column name (e.g. a TOTAL row) use the whole width. */
+  table.stack.stack-wide td[data-label=''] { grid-template-columns: minmax(0, 1fr); }
+  table.stack.stack-wide td[data-label='']::before { display: none; }
+  /* Checkbox / number / buttons: small, side by side. Buttons go to the right. */
+  table.stack.stack-wide td[data-compact='true'] { display: flex; width: auto !important; align-items: center; gap: 0.25rem; }
+  table.stack.stack-wide td[data-compact='true']:last-child { margin-left: auto; }
+  table.stack.stack-wide td[data-label='#']::before, table.stack.stack-wide td[data-label='No.']::before { padding: 0; }
+  /* Everything inside a cell goes in the value column (never under the label). */
+  table.stack.stack-wide td > * { min-width: 0; grid-column: 2; }
+  table.stack.stack-wide td[data-label=''] > * { grid-column: 1; }
+  table.stack.stack-wide td[data-compact='true'] > * { width: auto; }
+  /* Read-only cells with nothing in them are left out of the card. */
+  table.stack.stack-wide td:empty { display: none; }
+  /* The card itself scrolls the page, so inner wrappers must not add sideways scrolling. */
+  .overflow-x-auto:has(> table.stack.stack-wide) { overflow-x: visible; }
+}

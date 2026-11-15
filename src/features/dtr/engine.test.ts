@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_RULES, DEFAULT_SETTINGS, generateAttendance, minToPrint, parseRange, parseTime, planForms,
-  preset21to5, preset6to20, presetAuto, parseTime as pt, slotIndexes, cutoffRange,
+  preset21to5, preset6to20, presetAuto, parseTime as pt, slotIndexes, cutoffRange, currentCutoff,
 } from './engine';
 import { coveringText, weekNumber } from '@/lib/dates';
 import { transmittalCode } from '@/features/reports/header';
@@ -70,10 +70,12 @@ describe('attendance generation', () => {
   });
 
   it('cut-offs: 1st = 1–15, 2nd = 16–end of month', () => {
-    expect(cutoffRange('2026-11', 'first')).toEqual(['2026-11-01', '2026-11-15']);
-    expect(cutoffRange('2026-11', 'second')).toEqual(['2026-11-16', '2026-11-30']);
-    expect(cutoffRange('2028-02', 'second')).toEqual(['2028-02-16', '2028-02-29']);
-    expect(cutoffRange('2026-12', 'month')).toEqual(['2026-12-01', '2026-12-31']);
+    expect(cutoffRange('2026-11', 'first')).toEqual(['2026-10-21', '2026-11-05']);
+    expect(cutoffRange('2026-11', 'second')).toEqual(['2026-11-06', '2026-11-20']);
+    expect(cutoffRange('2027-01', 'first')).toEqual(['2026-12-21', '2027-01-05']);
+    expect(currentCutoff('2026-11-15')).toEqual({ month: '2026-11', cutoff: 'second' });
+    expect(currentCutoff('2026-11-03')).toEqual({ month: '2026-11', cutoff: 'first' });
+    expect(currentCutoff('2026-12-25')).toEqual({ month: '2027-01', cutoff: 'first' });
   });
 
   it('date presets', () => {

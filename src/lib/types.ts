@@ -9,7 +9,8 @@ export interface Committee {
   name: string;
   spm_name: string | null;
   code_prefix: string;
-  can_edit_published?: boolean; // set by the admin: may edit / delete its own published records
+  can_edit_published?: boolean; // set by the admin: may edit / delete its own published records and publish the weekly list
+  can_budget?: boolean; // set by the admin: may edit the Budget module
   created_at?: string;
 }
 
@@ -22,7 +23,6 @@ export interface Profile {
   committee_id: string | null;
   role: 'member' | 'admin';
   status: 'pending' | 'approved' | 'rejected';
-  can_budget?: boolean; // may edit the Budget module
   created_at?: string;
 }
 
@@ -33,8 +33,10 @@ export interface Entry {
   date_received: string;
   solicitor_name: string | null;
   patient_name: string | null;
-  organization: string | null;
-  barangay: string | null;
+  organization_id: string | null; // link to the organization (stored once)
+  organization: string | null; // its name, shown by the view
+  barangay_id: number | null; // link to the barangay (stored once)
+  barangay: string | null; // its name, shown by the view
   purpose: string | null;
   request: string | null;
   request_details: string | null;
@@ -51,7 +53,8 @@ export interface Entry {
   attachment_paths: string[];
   position: number | null; // manual order (drag & drop / number)
   submitted_at: string | null;
-  received_by: string | null; // person who received the document
+  received_committee_id: string | null; // office that received the document
+  received_by: string | null; // that office's name, shown by the view
   received_at: string | null;
   created_at: string;
   updated_at: string;

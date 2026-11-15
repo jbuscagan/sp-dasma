@@ -56,7 +56,7 @@ export async function renderPdf(r: ReportDoc): Promise<Blob> {
     foot: r.footRow ? [r.footRow] : undefined,
     showFoot: 'lastPage',
     startY: tableTop,
-    margin: { top: tableTop, left: m, right: m, bottom: m + 6 },
+    margin: { top: m, left: m, right: m, bottom: m + 6 }, // pages 2+ start at the top (no header)
     theme: 'grid',
     styles: {
       font: F,
@@ -69,10 +69,12 @@ export async function renderPdf(r: ReportDoc): Promise<Blob> {
       cellPadding: 1.4,
       minCellHeight: 7,
     },
-    headStyles: { fillColor: hexToRgb(r.headerColor), textColor: hexToRgb(r.headerText), fontStyle: 'bold' },
+    headStyles: { fillColor: hexToRgb(r.headerColor), textColor: hexToRgb(r.headerText), fontStyle: 'bold', halign: 'center', valign: 'middle' },
     footStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold' },
     columnStyles,
-    didDrawPage: drawHeader,
+    didDrawPage: (d) => {
+      if (d.pageNumber === 1) drawHeader(); // the header is printed on the first page only
+    },
   });
 
   // Note + encoder under the table (no line under the name)
@@ -80,8 +82,7 @@ export async function renderPdf(r: ReportDoc): Promise<Blob> {
   let y = lastY + 8;
   if (y + 22 > h - m) {
     doc.addPage();
-    drawHeader();
-    y = tableTop;
+    y = m + 6;
   }
   if (r.note) {
     doc.setFontSize(9).setFont(F, 'bold');

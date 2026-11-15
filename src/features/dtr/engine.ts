@@ -408,20 +408,33 @@ export function presetAuto(today: string): [string, string] {
 
 // ---------------------------------------------------------------- cut-offs (Records / Planner)
 
-export type Cutoff = 'first' | 'second' | 'month';
-export const CUTOFF_LABELS: Record<Cutoff, string> = { first: '1st cut-off (1–15)', second: '2nd cut-off (16–end)', month: 'Whole month' };
+export type Cutoff = 'first' | 'second';
+export const CUTOFF_LABELS: Record<Cutoff, string> = { first: '1st cut-off (21–5)', second: '2nd cut-off (6–20)' };
 
-/** month = 'yyyy-MM'. 1st cut-off = days 1–15, 2nd = 16 to the last day of the month. */
-export function cutoffRange(month: string, cutoff: Cutoff): [string, string] {
-  const [y, m] = month.split('-').map(Number);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const d = (n: number) => `${y}-${String(m).padStart(2, '0')}-${String(n).padStart(2, '0')}`;
-  if (cutoff === 'first') return [d(1), d(15)];
-  if (cutoff === 'second') return [d(16), d(last)];
-  return [d(1), d(last)];
+const ymd = (y: number, m: number, d: number) => utcIso(new Date(Date.UTC(y, m - 1, d)));
+function utcIso(d: Date) {
+  return d.toISOString().slice(0, 10);
 }
 
-/** The cut-off that contains today's date. */
+/** month = 'yyyy-MM'. 1st cut-off = 21st of the previous month to the 5th of this month; 2nd = 6th to 20th. */
+export function cutoffRange(month: string, cutoff: Cutoff): [string, string] {
+  const [y, m] = month.split('-').map(Number);
+  if (cutoff === 'first') return [ymd(y, m - 1, 21), ymd(y, m, 5)];
+  return [ymd(y, m, 6), ymd(y, m, 20)];
+}
+
+/** Short date text for the cut-off buttons, e.g. "Oct 21 – Nov 5". */
+export function cutoffText(month: string, cutoff: Cutoff): string {
+  const [a, b] = cutoffRange(month, cutoff);
+  const f = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${f(a)} – ${f(b)}`;
+}
+
+/** The cut-off that contains today's date (21st onwards belongs to next month's 1st cut-off). */
 export function currentCutoff(today: string): { month: string; cutoff: Cutoff } {
-  return { month: today.slice(0, 7), cutoff: Number(today.slice(8, 10)) <= 15 ? 'first' : 'second' };
+  const d = Number(today.slice(8, 10));
+  if (d >= 6 && d <= 20) return { month: today.slice(0, 7), cutoff: 'second' };
+  if (d <= 5) return { month: today.slice(0, 7), cutoff: 'first' };
+  const [y, m] = today.split('-').map(Number);
+  return { month: ymd(y, m + 1, 1).slice(0, 7), cutoff: 'first' };
 }

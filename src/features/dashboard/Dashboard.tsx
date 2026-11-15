@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui';
 import { HeritageArt } from '@/features/shell/HeritageArt';
 import { useSession } from '@/features/auth/session';
 import { supabase } from '@/lib/supabase/client';
+import { T } from '@/lib/db';
 import { must, useLive } from '@/hooks/useLive';
 import { fmtLong, todayIso, weekNumber, ordinal } from '@/lib/dates';
 import type { Entry, Flag, Transmittal } from '@/lib/types';
@@ -15,15 +16,15 @@ export function Dashboard() {
     async () => {
       const sb = supabase();
       const [drafts, recent, flags, pending, tx, revisions] = await Promise.all([
-        committee ? sb.from('entries').select('type').eq('committee_id', committee.id).in('status', ['draft', 'submitted']) : Promise.resolve({ data: [], error: null }),
-        sb.from('entries').select('*').eq('status', 'transmitted').order('updated_at', { ascending: false }).limit(8),
+        Promise.all(TYPE_ORDER.map((t) => sb.from('entries').select('id', { count: 'exact', head: true }).eq('status', 'transmitted').eq('type', t))),
+        sb.from(T.entries).select('*').eq('status', 'transmitted').order('updated_at', { ascending: false }).limit(8),
         sb.from('entry_flags').select('*').eq('status', 'open'),
         isAdmin ? sb.from('profiles').select('id').eq('status', 'pending') : Promise.resolve({ data: [], error: null }),
         committee ? sb.from('transmittals').select('*').eq('committee_id', committee.id).order('created_at', { ascending: false }).limit(5) : Promise.resolve({ data: [], error: null }),
         isAdmin ? sb.from('transmittals').select('id').not('revision_requested_at', 'is', null).eq('revision_open', false) : Promise.resolve({ data: [], error: null }),
       ]);
       return {
-        drafts: must(drafts) as { type: Entry['type'] }[],
+        published: Object.fromEntries(TYPE_ORDER.map((t, i) => [t, drafts[i].count ?? 0])) as Record<string, number>,
         recent: must(recent) as Entry[],
         flags: must(flags) as Flag[],
         pending: (must(pending) as unknown[]).length,
@@ -35,7 +36,9 @@ export function Dashboard() {
     [committee?.id, isAdmin],
   );
 
-  const draftCount = (t: string) => data?.drafts.filter((d) => d.type === t).length ?? 0;
+  const publishedCount = (t: string) => data?.published[t] ?? 0;
+  // First name for the greeting; falls back to the e-mail name so it never reads "Magandang araw, !".
+  const firstName = (profile.encoder_name ?? '').trim().split(/\s+/)[0] || (profile.email ?? '').split('@')[0];
   const today = todayIso();
 
   return (
@@ -46,7 +49,7 @@ export function Dashboard() {
           <div className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
             {fmtLong(today)} · {ordinal(weekNumber(today))} week
           </div>
-          <h1 className="mt-1 text-2xl font-bold sm:text-3xl">Magandang araw, {profile.encoder_name?.split(' ')[0] ?? ''}!</h1>
+          <h1 className="mt-1 text-2xl font-bold normal-case sm:text-3xl">Magandang araw{firstName ? `, ${firstName}` : ''}!</h1>
           <p className="mt-1 text-sm text-white/80">{committee?.name ?? 'Administrator'}</p>
           <div className="mt-5 flex flex-wrap gap-2">
             {[
@@ -79,12 +82,11 @@ export function Dashboard() {
         </Link>
       )}
 
-      <h2 className="mb-2 text-sm font-semibold text-muted">Not yet published (draft + submitted)</h2>
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {TYPE_ORDER.map((t) => (
-          <Link key={t} href={`/transmittal/${t}`} className="card p-4 transition hover:border-brand-500">
+          <Link key={t} href={t === 'personal' ? `/transmittal/${t}` : '/history/published'} className="card p-4 transition hover:border-brand-500">
             <div className="text-xs font-semibold uppercase tracking-wide text-muted">{TYPES[t].label}</div>
-            <div className="mt-1 text-3xl font-bold tabular-nums">{draftCount(t)}</div>
+            <div className="mt-1 text-3xl font-bold tabular-nums">{publishedCount(t)}</div>
           </Link>
         ))}
       </div>

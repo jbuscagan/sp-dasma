@@ -164,15 +164,17 @@ function drawFooter(
   const sigBottom = nameY + 0.8; // the signature slightly overlaps the name (signature over printed name)
   const sigH = Math.max(3, Math.min(s.footerSigMaxH, sigBottom - top));
 
-  const block = (cx: number, name: string, label: string, signature?: string, showName = true) => {
-    if (signature) drawImageFit(doc, signature, cx, sigBottom - sigH / 2, colW * 0.8, sigH);
-    let lineHalf = 15; // default line length 30 mm (blank forms)
-    if (showName && name) {
+  // Both lines have the same length and sit on the same height, so the two blocks are level.
+  const lineHalf = redraw ? colW * 0.34 : 15;
+  const block = (cx: number, name: string, label: string, signature?: string) => {
+    // With a printed name the signature overlaps it; without one it rests right on the line.
+    const bottomOfSig = name ? sigBottom : lineY - 0.2;
+    if (signature) drawImageFit(doc, signature, cx, bottomOfSig - sigH / 2, colW * 0.8, sigH);
+    if (name) {
       const text = name.toUpperCase();
       doc.setFont(PDF_FONT_CALIBRI, 'bold').setFontSize(s.footerNameFont);
-      const size = Math.max(4.5, Math.min(s.footerNameFont, (s.footerNameFont * colW * 0.95) / Math.max(1, doc.getTextWidth(text))));
+      const size = Math.max(4.5, Math.min(s.footerNameFont, (s.footerNameFont * lineHalf * 2) / Math.max(1, doc.getTextWidth(text))));
       doc.setFontSize(size).text(text, cx, nameY, { align: 'center' });
-      lineHalf = Math.min(colW / 2, doc.getTextWidth(text) / 2 + 1.5);
     }
     if (redraw) {
       doc.setDrawColor(40).setLineWidth(0.25).line(cx - lineHalf, lineY, cx + lineHalf, lineY);
@@ -184,9 +186,11 @@ function drawFooter(
 
   if (s.signatoryShow && s.signatoryName) {
     block(X(FOOTER.leftCenter), s.signatoryName, s.signatoryTitle || 'Sangguniang Panlungsod Member', images.official);
+  } else if (redraw) {
+    block(X(FOOTER.leftCenter), '', s.signatoryTitle || 'Sangguniang Panlungsod Member');
   }
-  const p = slot.person;
-  block(redraw ? X(FOOTER.rightCenter) : X((L.footer.lineX0 + L.footer.lineX1) / 2), p?.name ?? '', "EMPLOYEE'S SIGNATURE", p?.signature, s.employeeNameShow && !!p);
+  // Employee: signature only (no printed name).
+  block(redraw ? X(FOOTER.rightCenter) : X((L.footer.lineX0 + L.footer.lineX1) / 2), '', "EMPLOYEE'S SIGNATURE", slot.person?.signature);
 }
 
 /** Draws an image centred on (cx, cy), keeping its proportions inside maxW × maxH. */

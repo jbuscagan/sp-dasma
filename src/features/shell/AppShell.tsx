@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { useStackTables } from './StackTables';
 import { NAV } from './nav';
 import { Logo } from './Logo';
 import { GovBar } from './GovBar';
@@ -12,6 +13,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const { profile, committee, isAdmin } = useSession();
   const [open, setOpen] = useState(false);
+  const main = useRef<HTMLElement>(null);
+  useStackTables(main);
 
   const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
 
@@ -49,9 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         ))}
       </div>
       <div className="border-t border-white/10 p-3">
-        <div className="truncate text-sm font-semibold text-white">{profile.encoder_name || 'My account'}</div>
-        <div className="truncate text-xs text-white/60">{committee?.name}</div>
-        <button onClick={signOut} className="mt-2 w-full rounded-lg border border-white/20 px-3 py-1.5 text-sm text-white/90 hover:bg-white/10">
+        <button onClick={signOut} className="w-full rounded-lg border border-white/20 px-3 py-1.5 text-sm text-white/90 hover:bg-white/10">
           Log out
         </button>
       </div>
@@ -77,7 +78,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Logo size={28} />
         <span className="truncate text-sm font-semibold">{committee?.name ?? 'SP Dasmariñas'}</span>
       </header>
-      <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 sm:px-6 lg:py-8">{children}</main>
+      <main ref={main} className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 sm:px-6 lg:py-8">{children}</main>
       <footer className="border-t border-line bg-panel px-4 py-5 text-xs text-muted sm:px-6">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-2">
           <span>

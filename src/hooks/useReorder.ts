@@ -29,7 +29,11 @@ export interface Reorder {
   setPosition: (id: string, pos: number) => void;
 }
 
-export function useReorder(full: string[], visible: string[], commit: (order: string[]) => void, enabled = true): Reorder {
+/** Clicks on these never start a drag (so checkboxes, buttons and text boxes keep working). */
+const INTERACTIVE = 'input, button, textarea, select, a, label, [contenteditable="true"]';
+
+/** wholeRow = press and hold anywhere on the row to drag it (no ⋮⋮ handle needed). */
+export function useReorder(full: string[], visible: string[], commit: (order: string[]) => void, enabled = true, wholeRow = false): Reorder {
   const [armed, setArmed] = useState<string | null>(null); // row whose handle is pressed
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<{ id: string; after: boolean } | null>(null);
@@ -48,6 +52,14 @@ export function useReorder(full: string[], visible: string[], commit: (order: st
         ? {}
         : {
             draggable: armed === id,
+            ...(wholeRow
+              ? {
+                  onMouseDown: (e: React.MouseEvent) => setArmed((e.target as HTMLElement).closest(INTERACTIVE) ? null : id),
+                  onMouseUp: () => setArmed(null),
+                  style: { cursor: dragging === id ? 'grabbing' : 'grab' },
+                  title: 'Click, hold and drag to move this row',
+                }
+              : {}),
             onDragStart: (e) => {
               setDragging(id);
               e.dataTransfer.effectAllowed = 'move';

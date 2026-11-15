@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Field } from '@/components/ui';
 import { todayIso } from '@/lib/dates';
-import { CUTOFF_LABELS, currentCutoff, cutoffRange, type Cutoff } from './engine';
+import { CUTOFF_LABELS, currentCutoff, cutoffRange, cutoffText, type Cutoff } from './engine';
 
 export function CutoffPicker({ onChange }: { onChange: (range: [string, string]) => void }) {
   const init = currentCutoff(todayIso());
@@ -30,7 +30,8 @@ export function CutoffPicker({ onChange }: { onChange: (range: [string, string])
             onClick={() => setCutoff(c)}
             className={`rounded-md px-3 py-1.5 text-sm font-medium ${cutoff === c ? 'bg-brand-600 text-white dark:text-surface' : 'text-muted hover:bg-brand-50'}`}
           >
-            {CUTOFF_LABELS[c]}
+            {CUTOFF_LABELS[c].split(' (')[0]}
+            {/^\d{4}-\d{2}$/.test(month) && <span className="ml-1.5 text-xs opacity-80">{cutoffText(month, c)}</span>}
           </button>
         ))}
       </div>
