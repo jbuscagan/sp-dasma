@@ -1,0 +1,40 @@
+{
+  "name": "sp-dasma",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sangguniang Panlungsod ng Dasmari\u00f1as \u2013 committee reporting, transmittal and DTR platform",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prebuild": "node scripts/copy-ocr-assets.mjs",
+    "predev": "node scripts/copy-ocr-assets.mjs"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.7.0",
+    "@supabase/supabase-js": "2.84.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "docx": "9.5.1",
+    "exceljs": "4.4.0",
+    "jspdf": "3.0.3",
+    "jspdf-autotable": "5.0.2",
+    "next": "15.5.28",
+    "pdfjs-dist": "4.10.38",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "tesseract.js": "6.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "autoprefixer": "10.4.21",
+    "postcss": "8.5.6",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  }
+}
