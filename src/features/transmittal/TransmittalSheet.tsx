@@ -84,7 +84,11 @@ export function TransmittalSheet({
   const editable = (e: Entry) =>
     e.status !== 'transmitted' || !!committee?.can_edit_published || !!(e.transmittal_id && transmittals.get(e.transmittal_id)?.revision_open);
   const isEmpty = (r: Row) => fields.every((f) => f.key === 'date_received' || f.kind === 'assistance' || !(r[f.key] ?? '').trim());
-  const missingOf = (r: Row) => fields.filter((f) => f.required && !(r[f.key] ?? '').trim()).map((f) => String(f.key));
+  // To SAVE a draft only a name is needed; the other required fields are checked at Transmit
+  // (empty ones are tinted red so they are easy to spot).
+  const nameKeys = fields.filter((f) => f.key === 'solicitor_name' || f.key === 'patient_name').map((f) => String(f.key));
+  const missingOf = (r: Row) => (nameKeys.some((k) => (r[k] ?? '').trim()) ? [] : nameKeys.filter((k) => fields.find((f) => f.key === k)?.required));
+  const emptyRequired = (e: Entry, f: FieldDef) => !!f.required && !String((e as unknown as Record<string, unknown>)[f.key] ?? '').trim();
 
   const focusKey = (key: string) => setTimeout(() => table.current?.querySelector<HTMLElement>(`[data-cell="${key}"]`)?.focus(), 30);
   // Existing rows are "r-<row>-<col>", empty rows are "new-<row>-<col>".
@@ -207,10 +211,10 @@ export function TransmittalSheet({
       dataCell: string;
       onKeyDown: (ev: React.KeyboardEvent) => void;
       onPaste?: (ev: React.ClipboardEvent) => void;
-      invalid?: boolean;
+      invalid?: boolean | 'soft'; // 'soft' = still empty, needed before Transmit
     },
   ) => {
-    const invalidCls = o.invalid ? 'bg-red-50 ring-2 ring-inset ring-red-400 dark:bg-red-950/40' : '';
+    const invalidCls = o.invalid === 'soft' ? 'bg-red-50/70 dark:bg-red-950/30' : o.invalid ? 'bg-red-50 ring-2 ring-inset ring-red-400 dark:bg-red-950/40' : '';
     const label = f.label.split(' (')[0];
     const common = { 'data-cell': o.dataCell, 'aria-label': label, disabled: o.disabled, onKeyDown: o.onKeyDown, onPaste: o.onPaste };
 
@@ -233,8 +237,8 @@ export function TransmittalSheet({
           onChange={o.onChange}
           onCommit={o.onCommit}
           options={optionsFor(f)}
-          inputClassName={`${cellCls} pr-6`}
-          invalid={o.invalid}
+          inputClassName={`${cellCls} pr-6 ${o.invalid === 'soft' ? invalidCls : ''}`}
+          invalid={o.invalid === true}
           disabled={o.disabled}
           dataCell={o.dataCell}
           ariaLabel={label}
@@ -332,6 +336,7 @@ export function TransmittalSheet({
                       render={(value, setValue) =>
                         cell(f, value, {
                           disabled: !can,
+                          invalid: can && e.status !== 'transmitted' && emptyRequired(e, f) && !value.trim() ? 'soft' : false,
                           dataCell: `r-${ri}-${ci}`,
                           onChange: setValue,
                           onCommit: (v) => commitCell(e, f, String(f.key), v),

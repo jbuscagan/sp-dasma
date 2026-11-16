@@ -12,7 +12,7 @@ import { buildHeader } from '@/features/reports/header';
 import { BulkScanDialog } from '@/features/scan/BulkScanDialog';
 import { useLive } from '@/hooks/useLive';
 import { useReorder } from '@/hooks/useReorder';
-import { todayIso, weekStart } from '@/lib/dates';
+import { fmtLong, isoToUtc, ordinal, todayIso, utcToIso, weekNumber, weekStart } from '@/lib/dates';
 import type { Entry, EntryInput, TransmittalType } from '@/lib/types';
 import { deleteEntry, listEntries, listTransmittals, reorderEntries, setEntryStatus, setReceived, submitEntries, transmit } from './api';
 import { TYPES } from './config';
@@ -54,6 +54,8 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
   const [scanOpen, setScanOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [confirm, setConfirm] = useState<'submit' | 'transmit' | 'deleteAll' | null>(null);
+  // Transmit asks for the week. One transmittal per week: transmitting again in that week adds to it.
+  const [weekOf, setWeekOf] = useState(todayIso());
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -133,6 +135,20 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
     await p.catch((err) => setNotice({ kind: 'error', text: err.message }));
   };
 
+  const shiftDays = (iso: string, n: number) => {
+    const d = isoToUtc(iso);
+    d.setUTCDate(d.getUTCDate() + n);
+    return utcToIso(d);
+  };
+  const wkStart = weekStart(weekOf);
+  const wkEnd = shiftDays(wkStart, 6);
+  const wkNo = weekNumber(weekOf);
+  const today = todayIso();
+  // the transmittal date: today when transmitting the current week, otherwise the last day of that week
+  const transmitDate = today >= wkStart && today <= wkEnd ? today : wkEnd;
+  const sameWeek = (live.data?.tx ?? []).find((t) => t.type === type && t.week_no === wkNo && t.transmitted_on.slice(0, 4) === transmitDate.slice(0, 4));
+  const alreadyInWeek = sameWeek ? all.filter((e) => e.transmittal_id === sameWeek.id) : [];
+
   const run = async (what: 'submit' | 'transmit' | 'deleteAll') => {
     setBusy(true);
     try {
@@ -140,18 +156,18 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
         const n = await submitEntries(type);
         setNotice({ kind: 'ok', text: `Submitted ${n} request(s) for today.` });
       } else if (what === 'transmit') {
-        const header = buildHeader(type, committee, toTransmit, todayIso());
+        const header = buildHeader(type, committee, [...alreadyInWeek, ...toTransmit], transmitDate);
         await transmit({
           type,
-          code: header.code,
-          week: header.week,
+          code: sameWeek?.code ?? header.code,
+          week: wkNo,
           covering: header.covering,
-          date: todayIso(),
+          date: transmitDate,
           encoderName: profile.encoder_name ?? '',
           encoderPosition: profile.position ?? '',
           entryIds: toTransmit.map((e) => e.id),
         });
-        setNotice({ kind: 'ok', text: `Transmitted ${toTransmit.length} request(s) as ${header.code}. They are now in Published (All).` });
+        setNotice({ kind: 'ok', text: `Transmitted ${toTransmit.length} request(s) for the ${ordinal(wkNo)} week (${sameWeek?.code ?? header.code}).` });
       } else {
         const sent = deletable.filter((e) => e.status === 'transmitted').map((e) => e.id);
         for (const e of deletable.filter((x) => x.status !== 'transmitted')) await deleteEntry(e.id);
@@ -176,7 +192,7 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
             <Button variant="secondary" onClick={() => setScanOpen(true)}><Icon name="upload" size={16} />Upload &amp; scan</Button>
             <GenerateButton variant="secondary" disabled={!rows.length} count={checkedRows.length} onClick={() => setGenerating(true)} />
             <Button disabled={!drafts.length} onClick={() => setConfirm('submit')} title="Done encoding for today (still editable)"><Icon name="check" size={16} />Submit</Button>
-            <Button className="bg-accent text-civic-900 hover:bg-accent/90" disabled={!open.length} onClick={() => setConfirm('transmit')} title="Send to Published (All) and lock">
+            <Button className="bg-accent text-civic-900 hover:bg-accent/90" disabled={!open.length} onClick={() => { setWeekOf(todayIso()); setConfirm('transmit'); }} title="Done for the week: lock the requests">
               <Icon name="send" size={16} />Transmit
             </Button>
           </>
@@ -256,7 +272,10 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
         }
       >
         {confirm === 'submit' && (
-          <p className="text-sm">You are about to submit <b>{drafts.length}</b> request(s) for today. You can still edit them until you transmit.</p>
+          <p className="text-sm">
+            You are about to submit <b>{drafts.length}</b> request(s). They appear in <b>Published (All)</b> for every office right away, and you can still
+            edit them — submit as often as you like. At the end of the week, <b>Transmit</b> locks them.
+          </p>
         )}
         {confirm === 'transmit' &&
           (notReady.length ? (
@@ -269,10 +288,26 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
               </ul>
             </Alert>
           ) : (
-            <p className="text-sm">
-              You are about to transmit {checkedOpen.length ? <>the <b>{toTransmit.length} ticked</b></> : <>all <b>{toTransmit.length}</b></>} request(s).
-              They will appear in <b>Published (All)</b> and can no longer be changed unless an administrator allows it.
-            </p>
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="label">Which week is this for?</span>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => setWeekOf(shiftDays(wkStart, -7))} aria-label="Previous week">‹</Button>
+                  <input type="date" className="input w-auto" value={weekOf} onChange={(e) => e.target.value && setWeekOf(e.target.value)} aria-label="Any day of the week" />
+                  <Button size="sm" variant="secondary" onClick={() => setWeekOf(shiftDays(wkStart, 7))} aria-label="Next week">›</Button>
+                </div>
+                <p className="mt-1 font-semibold">{ordinal(wkNo)} week · {fmtLong(wkStart)} – {fmtLong(wkEnd)}</p>
+              </div>
+              {sameWeek ? (
+                <Alert kind="info">
+                  This week was already transmitted as <b>{sameWeek.code}</b> ({alreadyInWeek.length} request(s)). These {toTransmit.length} will be <b>added to it</b> — still one transmittal for the week.
+                </Alert>
+              ) : null}
+              <p>
+                You are about to transmit {checkedOpen.length ? <>the <b>{toTransmit.length} ticked</b></> : <>all <b>{toTransmit.length}</b></>} request(s).
+                Transmit means you are done for this week: they are <b>locked</b> and listed in History › Transmitted.
+              </p>
+            </div>
           ))}
         {confirm === 'deleteAll' && (
           <p className="text-sm">

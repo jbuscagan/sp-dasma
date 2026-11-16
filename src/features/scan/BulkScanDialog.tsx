@@ -130,7 +130,8 @@ export function BulkScanDialog({
       const created = new Map<number, string>(); // doc index → new record id
       for (const [i, d] of docs.entries()) {
         if (!d.include || !(plans[i].kind === 'new' || plans[i].kind === 'other')) continue;
-        if (!paths.has(d.fileIndex)) {
+        const sheet = /\.(xlsx|csv)$/i.test(files[d.fileIndex].name); // spreadsheets are not attached to every row
+        if (!sheet && !paths.has(d.fileIndex)) {
           const f = files[d.fileIndex];
           paths.set(d.fileIndex, await uploadAttachment(f, committee.id, f.name.split('.').pop() || 'jpg'));
         }
@@ -149,9 +150,9 @@ export function BulkScanDialog({
           diagnosis: medical ? v('diagnosis') : null,
           event_date: medical ? null : v('eventDate'),
           contact_number: v('contact'),
-          remarks: d.source === 'letter' ? 'Added from scanned letter' : 'Imported from transmittal PDF',
+          remarks: d.source === 'letter' ? 'Added from scanned letter' : sheet ? 'Imported from spreadsheet' : 'Imported from transmittal PDF',
           assistance_status: 'pending',
-          attachment_paths: [paths.get(d.fileIndex)!],
+          attachment_paths: sheet ? [] : [paths.get(d.fileIndex)!],
         };
         created.set(i, (await saveEntry(input)).id);
       }
@@ -243,16 +244,16 @@ export function BulkScanDialog({
             </label>
             <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-line px-4 py-6 text-center hover:border-brand-500">
               <Icon name="upload" size={28} className="text-brand-600" />
-              <span className="mt-2 text-sm font-semibold">Choose photos or PDFs</span>
-              <span className="text-xs text-muted">Many at once · JPG, PNG, PDF</span>
-              <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />
+              <span className="mt-2 text-sm font-semibold">Choose photos, PDFs or Excel</span>
+              <span className="text-xs text-muted">Many at once · JPG, PNG, PDF, Excel (.xlsx), CSV</span>
+              <input type="file" accept="image/*,application/pdf,.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" multiple className="hidden" onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files ?? [])])} />
             </label>
           </div>
           {files.length > 0 && (
             <ul className="divide-y divide-line rounded-lg border border-line text-sm">
               {files.map((f, i) => (
                 <li key={f.name + f.size + i} className="flex items-center justify-between gap-2 px-3 py-1.5">
-                  <span className="flex min-w-0 items-center gap-1.5 truncate"><Icon name={/pdf$/i.test(f.name) ? 'file' : 'image'} size={15} className="text-muted" />{f.name} <span className="text-xs text-muted">({Math.round(f.size / 1024)} KB)</span></span>
+                  <span className="flex min-w-0 items-center gap-1.5 truncate"><Icon name={/\.(pdf|xlsx|csv)$/i.test(f.name) ? 'file' : 'image'} size={15} className="text-muted" />{f.name} <span className="text-xs text-muted">({Math.round(f.size / 1024)} KB)</span></span>
                   <button type="button" className="text-xs text-red-600" onClick={() => setFiles((all) => all.filter((_, j) => j !== i))}>Remove</button>
                 </li>
               ))}
@@ -310,9 +311,13 @@ export function BulkScanDialog({
                           <td className="px-2 py-1">
                             <button type="button" onClick={() => setPreview(d)} className="block" title="See the page and the text that was read">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={d.thumbs[0]} alt={d.pageLabel} className="h-14 w-11 rounded border border-line object-cover object-top" />
+                              {d.thumbs[0] ? (
+                                <img src={d.thumbs[0]} alt={d.pageLabel} className="h-14 w-11 rounded border border-line object-cover object-top" />
+                              ) : (
+                                <span className="grid h-14 w-11 place-items-center rounded border border-line text-muted"><Icon name="file" size={18} /></span>
+                              )}
                             </button>
-                            <span className="mt-0.5 block max-w-[90px] truncate text-[10px] text-muted" title={d.pageLabel}>{d.source === 'table' ? 'table row' : d.thumbs.length > 1 ? `${d.thumbs.length} pages` : 'letter'}</span>
+                            <span className="mt-0.5 block max-w-[90px] truncate text-[10px] text-muted" title={d.pageLabel}>{d.source === 'table' ? (d.thumbs.length ? 'table row' : 'sheet row') : d.thumbs.length > 1 ? `${d.thumbs.length} pages` : 'letter'}</span>
                           </td>
                           {cols.map((c) => <td key={c.k} className={`px-1 py-1 ${c.w}`}>{cellInput(d, c)}</td>)}
                           <td className="min-w-[140px] px-2 py-1 text-xs">

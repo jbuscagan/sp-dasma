@@ -13,13 +13,14 @@ import { deletePublication, listPublications, publicationEntries, type Publicati
 import { combinedColumns } from '../columns';
 import { NOWRAP } from './shared';
 
-export function WeeklyLists({ committeeName, isAdmin }: { committeeName: (id: string | null | undefined) => string; isAdmin: boolean }) {
+export function WeeklyLists({ committeeName, canPublish }: { committeeName: (id: string | null | undefined) => string; canPublish: boolean }) {
   const pubs = useLive(listPublications, ['publications']);
   const [openId, setOpenId] = useState<string | null>(null);
   const [regen, setRegen] = useState<{ pub: Publication; rows: Entry[] } | null>(null);
   const items = useLive(() => (openId ? publicationEntries(openId) : Promise.resolve([])), ['publication_entries'], [openId]);
   const columns = useMemo(() => combinedColumns(committeeName), [committeeName]);
   const screenColumns = useMemo(() => columns.filter((c) => c.label !== 'TYPE'), [columns]);
+  const reportColumns = useMemo(() => combinedColumns(committeeName, false).filter((c) => c.label !== 'TYPE'), [committeeName]);
   const [error, setError] = useState('');
 
   if (pubs.loading) return <div className="p-8 text-center text-sm text-muted">Loading…</div>;
@@ -51,9 +52,9 @@ export function WeeklyLists({ committeeName, isAdmin }: { committeeName: (id: st
                   }
                 }}
               />
-              {isAdmin && (
-                <Button size="sm" variant="ghost" className="text-red-600" onClick={() => confirm(`Remove ${p.title}? The records themselves stay.`) && deletePublication(p.id).catch((e) => setError(e.message))}>
-                  Remove
+              {canPublish && (
+                <Button size="sm" variant="ghost" className="text-red-600" onClick={() => confirm(`Unpublish ${p.title}? The list is removed from Weekly published; the records themselves stay.`) && deletePublication(p.id).catch((e) => setError(e.message))}>
+                  Unpublish
                 </Button>
               )}
               <button className="text-muted" aria-label="Show records" onClick={() => setOpenId(isOpen ? null : p.id)}>{isOpen ? '▲' : '▼'}</button>
@@ -93,11 +94,13 @@ export function WeeklyLists({ committeeName, isAdmin }: { committeeName: (id: st
           onClose={() => setRegen(null)}
           title={`Generate ${regen.pub.title}`}
           entries={regen.rows}
-          columns={columns}
+          columns={reportColumns}
           headerColor={HEADER_COLORS.blank.hex}
           headerText="#000000"
           initialDate={regen.pub.published_on}
           received={(e) => e.received_by ?? ''}
+          receivedLabel="RECEIVED BY"
+          receivedDefault
           makeHeader={(d) => ({
             code: `SP-PUBLISHED-${String(regen.pub.week_no ?? '').padStart(3, '0')}`,
             dateText: fmtHeaderDate(d),

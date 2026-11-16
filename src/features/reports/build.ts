@@ -16,6 +16,7 @@ export interface BuildOptions<T = Entry> {
   orientation: Orientation;
   /** When given, adds a "RECEIVED" column, e.g. "☑ Office of SPM X". */
   received?: (e: T) => string;
+  receivedLabel?: string; // column title, default "RECEIVED"
   /** Blank numbered rows added at the end (the samples leave room for walk-ins). */
   blankRows?: number;
   note?: string;
@@ -25,7 +26,7 @@ export interface BuildOptions<T = Entry> {
 
 export function buildReport<T = Entry>(o: BuildOptions<T>): ReportDoc {
   const columns = [...o.columns];
-  if (o.received) columns.push({ label: 'RECEIVED', width: 10, value: o.received });
+  if (o.received) columns.push({ label: o.receivedLabel ?? 'RECEIVED', width: 14, value: o.received });
 
   const body = o.entries.map((e, i) => [String(i + 1), ...columns.map((c) => c.value(e) ?? '')]);
   for (let i = 0; i < (o.blankRows ?? 0); i++) {

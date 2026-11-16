@@ -1122,10 +1122,15 @@ CREATE OR REPLACE FUNCTION public.place_key(p text) RETURNS text
     '\s+', ' ', 'g'));
 $$;
 
-CREATE OR REPLACE FUNCTION public.publish_week(p_title text, p_covering text, p_week integer, p_from date, p_to date, p_entry_ids uuid[]) RETURNS uuid
+-- (older version without p_basis)
+DROP FUNCTION IF EXISTS public.publish_week(text, text, integer, date, date, uuid[]);
+
+CREATE OR REPLACE FUNCTION public.publish_week(p_title text, p_covering text, p_week integer, p_from date, p_to date, p_entry_ids uuid[], p_basis text DEFAULT 'received') RETURNS uuid
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$
+-- Weekly combined list of all offices. Only transmitted records whose date is inside From–To:
+-- p_basis 'received' = date received, 'transmitted' = the date the office transmitted them.
 declare
   v_id uuid;
 begin
@@ -1140,13 +1145,33 @@ begin
     from unnest(p_entry_ids) with ordinality as x(id, ord)
     join entries e on e.id = x.id and e.status = 'transmitted'
     left join transmittals t on t.id = e.transmittal_id
-   where e.date_received between p_from and p_to
-      or t.transmitted_on between p_from and p_to;
+   where case when p_basis = 'transmitted' then t.transmitted_on else e.date_received end between p_from and p_to;
   if not exists (select 1 from publication_entries where publication_id = v_id) then
     raise exception 'None of these records falls between % and %.', p_from, p_to;
   end if;
   perform public.log_publication(v_id);
   return v_id;
+end $$;
+
+-- Admin › Offices: delete an office only when nothing uses it (e.g. an empty row added by mistake).
+CREATE OR REPLACE FUNCTION public.remove_office(p_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare n int;
+begin
+  if not public.is_admin() then
+    raise exception 'Only an administrator can delete offices.';
+  end if;
+  select (select count(*) from profiles where committee_id = p_id)
+       + (select count(*) from entries where committee_id = p_id)
+       + (select count(*) from transmittals where committee_id = p_id)
+       + (select count(*) from employees where committee_id = p_id)
+    into n;
+  if n > 0 then
+    raise exception 'This office still has accounts, requests or employees, so it cannot be deleted.';
+  end if;
+  delete from committees where id = p_id;
 end $$;
 
 CREATE OR REPLACE FUNCTION public.reorder_entries(p_ids uuid[]) RETURNS void
@@ -1250,22 +1275,38 @@ CREATE OR REPLACE FUNCTION public.transmit_entries(p_type text, p_code text, p_w
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$
+-- Transmit = "done for this week": the requests are locked and listed in History › Transmitted.
+-- Only ONE transmittal per office, type and week: transmitting again in the same week adds to it.
 declare
   v_id uuid;
   v_committee uuid := public.my_committee();
+  v_date date := coalesce(p_date, current_date);
   v_count int;
 begin
   if v_committee is null then
     raise exception 'Your account is not approved or has no committee yet.';
   end if;
-  insert into transmittals (committee_id, type, code, week_no, covering, transmitted_on, encoder_name, encoder_position)
-  values (v_committee, p_type, p_code, p_week, p_covering, coalesce(p_date, current_date), p_encoder_name, p_encoder_position)
-  returning id into v_id;
+  select id into v_id from transmittals
+   where committee_id = v_committee and type = p_type and week_no = p_week
+     and extract(year from transmitted_on) = extract(year from v_date)
+   order by created_at limit 1;
+  if v_id is null then
+    insert into transmittals (committee_id, type, code, week_no, covering, transmitted_on, encoder_name, encoder_position)
+    values (v_committee, p_type, p_code, p_week, p_covering, v_date, p_encoder_name, p_encoder_position)
+    returning id into v_id;
+  else
+    update transmittals
+       set covering = coalesce(nullif(p_covering, ''), covering),
+           transmitted_on = greatest(transmitted_on, v_date),
+           encoder_name = coalesce(nullif(p_encoder_name, ''), encoder_name),
+           encoder_position = coalesce(nullif(p_encoder_position, ''), encoder_position)
+     where id = v_id;
+  end if;
   update entries set status = 'transmitted', transmittal_id = v_id
    where id = any (p_entry_ids) and committee_id = v_committee and type = p_type and status in ('draft', 'submitted');
   get diagnostics v_count = row_count;
   if v_count = 0 then
-    raise exception 'None of the selected entries could be published (already published or not yours).';
+    raise exception 'None of the selected entries could be transmitted (already transmitted or not yours).';
   end if;
   return v_id;
 end $$;
@@ -1500,7 +1541,7 @@ DROP POLICY IF EXISTS entries_insert ON public.entries;
 CREATE POLICY entries_insert ON public.entries FOR INSERT WITH CHECK ((committee_id = public.my_committee()));
 
 DROP POLICY IF EXISTS entries_read ON public.entries;
-CREATE POLICY entries_read ON public.entries FOR SELECT USING (((committee_id = public.my_committee()) OR ((type <> 'personal'::text) AND (public.is_admin() OR (public.is_approved() AND (status = 'transmitted'::text))))));
+CREATE POLICY entries_read ON public.entries FOR SELECT USING (((committee_id = public.my_committee()) OR ((type <> 'personal'::text) AND (public.is_admin() OR (public.is_approved() AND (status = ANY (ARRAY['submitted'::text, 'transmitted'::text])))))));
 
 DROP POLICY IF EXISTS entries_update ON public.entries;
 CREATE POLICY entries_update ON public.entries FOR UPDATE USING (((committee_id = public.my_committee()) OR (public.is_admin() AND (type <> 'personal'::text)))) WITH CHECK (((committee_id = public.my_committee()) OR (public.is_admin() AND (type <> 'personal'::text))));
@@ -1574,7 +1615,7 @@ DROP POLICY IF EXISTS publication_entries_read ON public.publication_entries;
 CREATE POLICY publication_entries_read ON public.publication_entries FOR SELECT USING (public.is_approved());
 
 DROP POLICY IF EXISTS publications_delete ON public.publications;
-CREATE POLICY publications_delete ON public.publications FOR DELETE USING (public.is_admin());
+CREATE POLICY publications_delete ON public.publications FOR DELETE USING (public.can_publish_week());
 
 DROP POLICY IF EXISTS publications_insert ON public.publications;
 CREATE POLICY publications_insert ON public.publications FOR INSERT WITH CHECK (public.can_publish_week());
@@ -1862,6 +1903,19 @@ declare
   s record;
   v_org uuid;
 begin
+  -- one transmittal per office, type and week (older versions made a new one at every Transmit)
+  for r in select t.id, k.keep from transmittals t
+             join lateral (select x.id as keep from transmittals x
+                            where x.committee_id = t.committee_id and x.type = t.type and x.week_no = t.week_no
+                              and extract(year from x.transmitted_on) = extract(year from t.transmitted_on)
+                            order by x.created_at, x.id limit 1) k on true
+            where t.week_no is not null and t.id <> k.keep loop
+    update public.entries set transmittal_id = r.keep where transmittal_id = r.id;
+    update public.transmittals k set transmitted_on = greatest(k.transmitted_on, d.transmitted_on)
+      from public.transmittals d where k.id = r.keep and d.id = r.id;
+    delete from public.transmittals where id = r.id;
+  end loop;
+
   -- organizations that are really "organization - barangay", or just a barangay
   for r in select id, name from public.organizations loop
     s := public.split_org_barangay(r.name);

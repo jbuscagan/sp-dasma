@@ -177,3 +177,14 @@ describe('duplicate checks', async () => {
     expect(m.get(1)).toBe(0);
   });
 });
+
+describe('spreadsheets', async () => {
+  const { parseCsv, rowsToRequests } = await import('./sheetParse');
+  it('reads requests from a CSV / Excel sheet by its column titles', () => {
+    const rows = parseCsv('Transmittal list\n#,Date Received,Name of the Solicitor,Organization / Barangay,Request,Contact No.,Date of Event\n1,11/04/2026,"Palomo, Alyssa",KBDM - Burol Main,Cash,0917 123 4567,"Nov 20-21"\n2,2026-11-05,Juan Dela Cruz,,Raffle,09181234567,\n');
+    const req = rowsToRequests(rows);
+    expect(req).toHaveLength(2);
+    expect(req[0]).toMatchObject({ date_received: '2026-11-04', solicitor_name: 'Palomo, Alyssa', orgBarangay: 'KBDM - Burol Main', request: 'Cash', contact_number: '09171234567', event_date: 'Nov 20-21' });
+    expect(req[1]).toMatchObject({ date_received: '2026-11-05', solicitor_name: 'Juan Dela Cruz', request: 'Raffle' });
+  });
+});

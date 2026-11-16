@@ -33,6 +33,12 @@ const LABELS: [RegExp, Field | 'orgBarangay' | 'number'][] = [
   [/remarks/i, 'remarks'],
 ];
 
+/** Which field a column title belongs to ("DATE RECEIVED" → date_received), or null. */
+export function headerField(label: string): Field | 'orgBarangay' | 'number' | null {
+  const t = label.replace(/\s+/g, ' ').trim();
+  return t ? LABELS.find(([re]) => re.test(t))?.[1] ?? null : null;
+}
+
 const clean = (s: string) => s.replace(/[​­]/g, '').replace(/\s+/g, ' ').trim();
 
 /** Groups items into lines (same baseline ± tolerance). */

@@ -31,7 +31,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [q, setQ] = useState('');
-  const [only, setOnly] = useState<'' | 'issues' | 'flagged'>('');
+  const [only, setOnly] = useState<'' | 'issues' | 'flagged' | 'submitted' | 'transmitted'>('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [flagFor, setFlagFor] = useState<Entry | null>(null);
   const [checksFor, setChecksFor] = useState<Entry | null>(null);
@@ -41,7 +41,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
   const [error, setError] = useState('');
 
   const { entries, flags, error: loadError, loading } = useHistoryData(
-    { status: 'transmitted', type: type || null, committeeId: office || null, from: from || undefined, to: to || undefined },
+    { status: ['submitted', 'transmitted'], type: type || null, committeeId: office || null, from: from || undefined, to: to || undefined },
     [type, office, from, to],
   );
   const order = useLive(getEntryOrder, ['entry_order']);
@@ -64,6 +64,8 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
   const columns = useMemo(() => combinedColumns(committeeName), [committeeName]);
   // On screen: no TYPE column and no type under the office (it repeated on every row).
   const screenColumns = useMemo(() => columns.filter((c) => c.label !== 'TYPE'), [columns]);
+  // Report: #, date received, name, organization / barangay, purpose, contact no., date of event, received by (no office / type)
+  const reportColumns = useMemo(() => combinedColumns(committeeName, false).filter((c) => c.label !== 'TYPE'), [committeeName]);
   const issues = useMemo(() => findIssues(entries), [entries]);
   const orgs = useMemo(() => Array.from(new Set(entries.map((e) => (e.organization ?? '').trim()).filter(Boolean))).sort(), [entries]);
 
@@ -73,6 +75,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
         if (!matches(e, columns, q)) return false;
         if (org && (e.organization ?? '').trim() !== org) return false;
         if (only === 'issues') return issues.has(e.id);
+        if (only === 'submitted' || only === 'transmitted') return e.status === only;
         if (only === 'flagged') return (flags.get(e.id) ?? []).some((f) => f.status === 'open');
         return true;
       }),
@@ -102,8 +105,9 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
     });
 
   // Locked for everyone except admins, offices the admin allowed (own rows), or an admin-opened revision.
+  // Submitted requests of my office are still editable; transmitted ones are locked unless allowed.
   const canChange = (e: Entry) =>
-    isAdmin || (e.committee_id === committee?.id && (!!committee?.can_edit_published || (!!e.transmittal_id && revisionOpen.has(e.transmittal_id))));
+    isAdmin || (e.committee_id === committee?.id && (e.status === 'submitted' ||!!committee?.can_edit_published || (!!e.transmittal_id && revisionOpen.has(e.transmittal_id))));
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries]);
 
   return (
@@ -136,6 +140,8 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
             <option value="">Everything</option>
             <option value="issues">Possible discrepancies</option>
             <option value="flagged">With open remarks</option>
+            <option value="submitted">Submitted (not yet transmitted)</option>
+            <option value="transmitted">Transmitted (locked)</option>
           </select>
         </Field>
         <Field label="Search" className="col-span-2 sm:col-span-1"><input className="input" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
@@ -190,7 +196,14 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
                     }`}
                   >
                     <td className="px-1.5 py-2 text-center"><input type="checkbox" className="h-4 w-4 accent-brand-600" aria-label="Select row" checked={selected.has(e.id)} onChange={() => toggle(e.id)} /></td>
-                    <td className="border-l border-line px-1.5 py-1.5 text-center tabular-nums text-muted">{i + 1}</td>
+                    <td className="border-l border-line px-1.5 py-1.5 text-center tabular-nums text-muted">
+                      {i + 1}
+                      {e.status === 'submitted' ? (
+                        <span className="mt-0.5 block text-[10px] font-semibold leading-tight text-blue-600" title="Submitted — not yet transmitted (still editable)">Submitted</span>
+                      ) : (
+                        <span className="mt-0.5 block text-muted" title="Transmitted (locked)"><Icon name="lock" size={11} className="mx-auto" /></span>
+                      )}
+                    </td>
                     {screenColumns.map((c) => <td key={c.label} className={`${NOWRAP.test(c.label) ? 'whitespace-nowrap' : 'whitespace-pre-line'} border-l border-line px-1.5 py-1.5`}>{c.value(e)}</td>)}
                     <td className="break-words border-l border-line px-1.5 py-1.5 text-xs font-semibold text-brand-700" title={e.received_at ? fmtLong(e.received_at) : undefined}>{e.received_by ?? ''}</td>
                     <td className="border-l border-line px-1 py-1.5 text-center">
@@ -240,11 +253,13 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
         onClose={() => setExporting(false)}
         title="Generate published records"
         entries={targetRows}
-        columns={columns}
+        columns={reportColumns}
         headerColor={HEADER_COLORS.blank.hex}
         headerText="#000000"
         initialDate={todayIso()}
         received={(e) => e.received_by ?? ''}
+        receivedLabel="RECEIVED BY"
+        receivedDefault
         intro={<Alert kind="info">{chosen.length ? <>Generating the <b>{chosen.length} selected</b> record(s).</> : <>No rows are selected, so all <b>{rows.length}</b> shown records are included.</>}</Alert>}
         makeHeader={(d) => ({
           code: 'SP-PUBLISHED',
@@ -257,7 +272,8 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
       />
       {publishing && (
         <PublishDialog
-          rows={targetRows}
+          rows={targetRows.filter((e) => e.status === 'transmitted')}
+          leftOut={targetRows.filter((e) => e.status !== 'transmitted').length}
           selectedCount={chosen.length}
           transmittedOn={(e) => (e.transmittal_id ? txDate.get(e.transmittal_id) ?? null : null)}
           onClose={() => setPublishing(false)}

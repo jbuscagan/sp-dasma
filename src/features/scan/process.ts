@@ -6,7 +6,8 @@
 // Everything runs in the browser; nothing is sent to an outside service.
 import { detectLetterType, extractLetter, splitPages, type Confidence, type Extracted, type Guess } from './extract';
 import { itemsToText, pageTextItems } from './pdfText';
-import { detectTransmittalType, parseTablePage, splitOrgBarangay, type Columns } from './tableParse';
+import { detectTransmittalType, parseTablePage, splitOrgBarangay, type Columns, type ParsedRow } from './tableParse';
+import { parseCsv, readXlsx, rowsToRequests } from './sheetParse';
 import type { TransmittalType } from '@/lib/types';
 
 export interface ScanDoc {
@@ -159,32 +160,7 @@ export async function processFiles(
           fileType = detectedType;
           if (rows.length) {
             rows.forEach((r, ri) => {
-              // organization only / barangay only, whichever column it came from
-              const ob = splitOrgBarangay(r.orgBarangay ?? r.organization ?? '', ctx.barangays);
-              const brgy = r.barangay ? splitOrgBarangay(r.barangay, ctx.barangays) : { organization: '', barangay: '' };
-              docs.push({
-                key: `${fi}-${p}-${ri}`,
-                source: 'table',
-                fileIndex: fi,
-                pageLabel: `${label}, row ${ri + 1}`,
-                thumbs: [thumb],
-                text: Object.values(r).join(' · '),
-                detectedType,
-                // rows of another kind of transmittal (e.g. a Medical page while on Christmas Party) start unticked
-                include: !detectedType || !ctx.type || detectedType === ctx.type,
-                fields: {
-                  name: high(ctx.medical ? r.patient_name || r.solicitor_name || '' : r.solicitor_name || ''),
-                  organization: high(ob.organization || brgy.organization),
-                  barangay: high(brgy.barangay || ob.barangay || (r.barangay ?? '')),
-                  request: high(r.request ?? ''),
-                  purpose: high(r.purpose ?? ''),
-                  dateReceived: high(r.date_received ?? ''),
-                  eventDate: high(r.event_date ?? ''),
-                  contact: high(r.contact_number ?? ''),
-                  diagnosis: high(r.diagnosis ?? ''),
-                },
-                solicitor: ctx.medical && r.patient_name ? r.solicitor_name : undefined,
-              });
+              docs.push(tableDoc(r, `${fi}-${p}-${ri}`, fi, `${label}, row ${ri + 1}`, [thumb], detectedType, ctx));
             });
           } else {
             carry = null;
@@ -195,6 +171,13 @@ export async function processFiles(
           toOcr.push({ seq: pageSeq, fileIndex: fi, label, canvas, thumb });
         }
       }
+    } else if (/\.(xlsx|csv)$/i.test(f.name)) {
+      // spreadsheet: one request per row
+      const sheets = /\.csv$/i.test(f.name) ? [parseCsv(await f.text())] : await readXlsx(f);
+      let n = 0;
+      sheets.forEach((rows, si) =>
+        rowsToRequests(rows).forEach((r) => docs.push(tableDoc(r, `${fi}-x${si}-${n}`, fi, `${f.name}, row ${++n}`, [], null, ctx))),
+      );
     } else if (f.type.startsWith('image/')) {
       const canvas = await fileToCanvas(f);
       toOcr.push({ seq: seq++, fileIndex: fi, label: f.name, canvas, thumb: thumbOf(canvas) });
@@ -250,6 +233,44 @@ export async function processFiles(
     });
   });
   return docs;
+}
+
+/** One row of a prepared transmittal (PDF table or spreadsheet) → a document for review. */
+function tableDoc(
+  r: ParsedRow,
+  key: string,
+  fileIndex: number,
+  pageLabel: string,
+  thumbs: string[],
+  detectedType: TransmittalType | null,
+  ctx: { barangays: string[]; medical: boolean; type?: TransmittalType },
+): ScanDoc {
+  // organization only / barangay only, whichever column it came from
+  const ob = splitOrgBarangay(r.orgBarangay ?? r.organization ?? '', ctx.barangays);
+  const brgy = r.barangay ? splitOrgBarangay(r.barangay, ctx.barangays) : { organization: '', barangay: '' };
+  return {
+    key,
+    source: 'table',
+    fileIndex,
+    pageLabel,
+    thumbs,
+    text: Object.values(r).join(' · '),
+    detectedType,
+    // rows of another kind of transmittal (e.g. a Medical page while on Christmas Party) start unticked
+    include: !detectedType || !ctx.type || detectedType === ctx.type,
+    fields: {
+      name: high(ctx.medical ? r.patient_name || r.solicitor_name || '' : r.solicitor_name || ''),
+      organization: high(ob.organization || brgy.organization),
+      barangay: high(brgy.barangay || ob.barangay || (r.barangay ?? '')),
+      request: high(r.request ?? ''),
+      purpose: high(r.purpose ?? ''),
+      dateReceived: high(r.date_received ?? ''),
+      eventDate: high(r.event_date ?? ''),
+      contact: high(r.contact_number ?? ''),
+      diagnosis: high(r.diagnosis ?? ''),
+    },
+    solicitor: ctx.medical && r.patient_name ? r.solicitor_name : undefined,
+  };
 }
 
 export const CONFIDENCE_STYLE: Record<Confidence, string> = {

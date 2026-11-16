@@ -42,6 +42,8 @@ export function ExportDialog<T = Entry>({
   confirmLabel = 'Generate',
   beforeExport,
   received,
+  receivedLabel,
+  receivedDefault = false,
   intro,
   dateLabel = 'Date transmitted / completed',
   note,
@@ -64,6 +66,8 @@ export function ExportDialog<T = Entry>({
   confirmLabel?: string;
   beforeExport?: (req: ExportRequest) => Promise<void>; // e.g. save the transmittal first
   received?: (e: T) => string;
+  receivedLabel?: string; // e.g. "RECEIVED BY"
+  receivedDefault?: boolean; // "Include Received by" ticked at the start
   intro?: React.ReactNode;
   dateLabel?: string;
   note?: string; // '' = no note line
@@ -81,7 +85,7 @@ export function ExportDialog<T = Entry>({
   const [format, setFormat] = useState<ExportFormat>('pdf');
   const [paper, setPaper] = useState<PaperKey>('A4');
   const [orientation, setOrientation] = useState<Orientation>('landscape');
-  const [withReceived, setWithReceived] = useState(false);
+  const [withReceived, setWithReceived] = useState(receivedDefault);
   const [color, setColor] = useState(headerColor);
   const [withNote, setWithNote] = useState(true);
   const [blankRows, setBlankRows] = useState(0);
@@ -100,6 +104,7 @@ export function ExportDialog<T = Entry>({
     setEncoder({ name: profile.encoder_name ?? '', position: profile.position ?? '' });
     setColor(headerColor);
     setWithNote(note !== '');
+    setWithReceived(receivedDefault);
     setError('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -134,6 +139,7 @@ export function ExportDialog<T = Entry>({
           paper,
           orientation,
           received: withReceived ? received : undefined,
+          receivedLabel,
           blankRows,
         });
         if (filename) doc.filename = filename;

@@ -30,8 +30,10 @@ export async function publicationEntries(id: string): Promise<Entry[]> {
   return rows.sort((a, b) => (pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0));
 }
 
-export async function publishWeek(a: { title: string; covering: string; week: number; from: string; to: string; entryIds: string[] }): Promise<string> {
-  return must(await supabase().rpc('publish_week', { p_title: a.title, p_covering: a.covering, p_week: a.week, p_from: a.from, p_to: a.to, p_entry_ids: a.entryIds })) as string;
+export async function publishWeek(a: { title: string; covering: string; week: number; from: string; to: string; entryIds: string[]; basis?: 'received' | 'transmitted' }): Promise<string> {
+  return must(
+    await supabase().rpc('publish_week', { p_title: a.title, p_covering: a.covering, p_week: a.week, p_from: a.from, p_to: a.to, p_entry_ids: a.entryIds, p_basis: a.basis ?? 'received' }),
+  ) as string;
 }
 
 export async function deletePublication(id: string) {

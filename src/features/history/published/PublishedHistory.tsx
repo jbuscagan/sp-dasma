@@ -16,7 +16,7 @@ export function PublishedHistory() {
     <>
       <PageHeader title="Published (All)" subtitle="Records transmitted by every office." />
       <Tabs<Tab> value={tab} onChange={setTab} items={[['all', 'All records'], ['weekly', 'Weekly published']]} />
-      {tab === 'all' ? <AllRecords canPublish={canPublish} onPublished={() => setTab('weekly')} /> : <WeeklyLists committeeName={committeeName} isAdmin={isAdmin} />}
+      {tab === 'all' ? <AllRecords canPublish={canPublish} onPublished={() => setTab('weekly')} /> : <WeeklyLists committeeName={committeeName} canPublish={canPublish} />}
     </>
   );
 }

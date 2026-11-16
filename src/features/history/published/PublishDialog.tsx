@@ -16,12 +16,14 @@ type Basis = 'received' | 'transmitted';
  */
 export function PublishDialog({
   rows,
+  leftOut = 0,
   selectedCount,
   transmittedOn,
   onClose,
   onDone,
 }: {
   rows: Entry[];
+  leftOut?: number; // submitted (not yet transmitted) records that cannot be published yet
   selectedCount: number;
   transmittedOn: (e: Entry) => string | null; // yyyy-mm-dd
   onClose: () => void;
@@ -44,7 +46,7 @@ export function PublishDialog({
     setBusy(true);
     setError('');
     try {
-      await publishWeek({ title: `Week ${week}`, covering: coveringText(week, from, to), week, from, to, entryIds: inWeek.map((e) => e.id) });
+      await publishWeek({ title: `Week ${week}`, covering: coveringText(week, from, to), week, from, to, entryIds: inWeek.map((e) => e.id), basis });
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -79,6 +81,7 @@ export function PublishDialog({
         <p className="text-sm">
           <b>{inWeek.length}</b> of the {selectedCount ? `${rows.length} selected` : `${rows.length} shown`} record(s) fall within these dates and will be published as one list for all offices.
           {outside > 0 && <> <span className="text-muted">{outside} record(s) from other weeks are left out.</span></>}
+          {leftOut > 0 && <> <span className="text-muted">{leftOut} submitted record(s) are not transmitted yet, so they are not included.</span></>}
         </p>
         <p className="text-xs text-muted">Will be saved as <b>Week {week}</b> {from && to ? coveringText(week, from, to) : ''}.</p>
       </div>

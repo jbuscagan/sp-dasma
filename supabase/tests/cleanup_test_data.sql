@@ -9,3 +9,7 @@ insert into entries (committee_id, type, solicitor_name, organization_id, barang
   ('11111111-1111-1111-1111-111111111111', 'ngo', 'Mixed Brgy', null, (select id from barangays where name = 'Seniors Club - Zone I'), 'draft'),
   ('11111111-1111-1111-1111-111111111111', 'barangay', 'Brgy As Org', (select id from organizations where name = 'Barangay Salitran II'), null, 'draft');
 alter table entries enable trigger user;
+-- two transmittals for the same office, type and week (older versions did this)
+insert into transmittals (committee_id, type, code, week_no, transmitted_on) values
+  ('11111111-1111-1111-1111-111111111111', 'medical', 'SPMRC-MA-030', 30, '2026-07-20'),
+  ('11111111-1111-1111-1111-111111111111', 'medical', 'SPMRC-MA-030', 30, '2026-07-22');

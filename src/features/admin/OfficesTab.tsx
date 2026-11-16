@@ -36,7 +36,7 @@ export function OfficesTab() {
       <BrandingCard />
       <div className="card">
         <table className="table-base">
-          <thead><tr><th>Office name</th><th>SPM code name</th><th title="Shown in Received by">SPM full name</th><th>Prefix</th><th title="May edit and delete its own records after transmitting, and publish the weekly list in Published (All)">Edit / delete / publish</th><th title="May encode and edit the Budget module">Budget</th></tr></thead>
+          <thead><tr><th>Office name</th><th>SPM code name</th><th title="Shown in Received by">SPM full name</th><th>Prefix</th><th title="May edit and delete its own records after transmitting, and publish the weekly list in Published (All)">Edit / delete / publish</th><th title="May encode and edit the Budget module">Budget</th><th /></tr></thead>
           <tbody>
             {(committees.data ?? []).map((c) => (
               <tr key={c.id}>
@@ -46,13 +46,26 @@ export function OfficesTab() {
                   </td>
                 ))}
                 {(['can_edit_published', 'can_budget'] as const).map((k) => (
-                  <td key={k}>
-                    <label className="flex items-center gap-2 text-sm">
+                  <td key={k} className="text-center align-middle">
+                    <label className="inline-flex items-center justify-center gap-2 text-sm">
                       <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={!!c[k]} onChange={(e) => save({ [k]: e.target.checked }, c.id)} />
                       Allowed
                     </label>
                   </td>
                 ))}
+                <td className="text-right align-middle">
+                  <button
+                    className="text-xs text-red-600 hover:underline"
+                    title="Delete this office (only when it has no accounts, requests or employees)"
+                    onClick={async () => {
+                      if (!confirm(`Delete the office “${c.name || '(no name)'}”?`)) return;
+                      const { error } = await supabase().rpc('remove_office', { p_id: c.id });
+                      setError(error?.message ?? '');
+                    }}
+                  >
+                    Delete
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

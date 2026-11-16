@@ -24,6 +24,8 @@ do $$ begin
   assert (select organization from entry_list where solicitor_name = 'Brgy As Org') is null
      and (select barangay from entry_list where solicitor_name = 'Brgy As Org') = 'Salitran II', 'FAIL barangay stored as organization';
   raise notice 'PASS existing mixed organization/barangay records were cleaned up';
+  assert (select count(*) from transmittals where type = 'medical' and week_no = 30) = 1, 'FAIL duplicate weeks not merged';
+  raise notice 'PASS duplicate transmittals of the same week were merged into one';
 end $$;
 
 select pg_temp.as_user('bbbbbbbb-0000-0000-0000-000000000000');
@@ -112,6 +114,57 @@ do $$ begin
   exception when raise_exception then
     if sqlerrm like 'FAIL%' then raise; end if;
     raise notice 'PASS only an administrator can remove barangays / organizations';
+  end;
+end $$;
+reset role;
+
+-- ---------- one transmittal per week, submitted visible to all, publish by date, unpublish, delete office ----------
+select pg_temp.as_user('bbbbbbbb-0000-0000-0000-000000000000');
+do $$ declare t1 uuid; t2 uuid; begin
+  insert into entries (committee_id, type, solicitor_name, request, status, date_received) values
+    ('11111111-1111-1111-1111-111111111111', 'sk', 'Week Mon', 'Cash', 'draft', '2026-11-16'),
+    ('11111111-1111-1111-1111-111111111111', 'sk', 'Week Wed', 'Cash', 'draft', '2026-11-18');
+  t1 := transmit_entries('sk', 'SPMRC-SK-047', 47, '(47th)', '2026-11-16', 'B', 'S', array(select id from entries where solicitor_name = 'Week Mon'));
+  t2 := transmit_entries('sk', 'SPMRC-SK-047', 47, '(47th | Nov 16 to 18)', '2026-11-18', 'B', 'S', array(select id from entries where solicitor_name = 'Week Wed'));
+  assert t1 = t2, 'FAIL second transmittal for the same week';
+  assert (select count(*) from transmittals where type = 'sk' and week_no = 47) = 1, 'FAIL duplicate week';
+  assert (select count(*) from entries where transmittal_id = t1) = 2, 'FAIL entries not together';
+  raise notice 'PASS transmitting twice in one week keeps ONE transmittal (both requests in it)';
+
+  insert into entries (committee_id, type, solicitor_name, request, status) values ('11111111-1111-1111-1111-111111111111', 'ngo', 'Submitted Today', 'Cash', 'submitted');
+end $$;
+reset role;
+select pg_temp.as_user('cccccccc-0000-0000-0000-000000000000');
+do $$ begin
+  assert exists (select 1 from entry_list where solicitor_name = 'Submitted Today'), 'FAIL submitted not visible';
+  assert not exists (select 1 from entry_list where status = 'draft' and committee_id = '11111111-1111-1111-1111-111111111111'), 'FAIL drafts visible';
+  raise notice 'PASS submitted requests appear for every office (drafts stay private)';
+end $$;
+reset role;
+alter table entries disable trigger user;
+update entries set date_received = '2026-11-09' where solicitor_name = 'Week Mon';  -- received the week before
+alter table entries enable trigger user;
+select pg_temp.as_user('cccccccc-0000-0000-0000-000000000000');
+do $$ declare p uuid; begin
+  p := publish_week('Week 47', '', 47, '2026-11-15', '2026-11-21', array(select id from entries where solicitor_name in ('Week Mon', 'Week Wed')), 'received');
+  assert (select count(*) from publication_entries where publication_id = p) = 1, 'FAIL other week included (by date received)';
+  raise notice 'PASS publishing by date received leaves out records of other weeks';
+  delete from publications where id = p;
+  assert not exists (select 1 from publications where id = p), 'FAIL unpublish';
+  raise notice 'PASS an office allowed to publish can unpublish';
+end $$;
+reset role;
+select pg_temp.as_user('aaaaaaaa-0000-0000-0000-000000000000');
+do $$ declare c uuid; begin
+  insert into committees (name) values ('') returning id into c;
+  perform remove_office(c);
+  assert not exists (select 1 from committees where id = c), 'FAIL empty office not deleted';
+  begin
+    perform remove_office('11111111-1111-1111-1111-111111111111');
+    raise exception 'FAIL office in use deleted';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL%' then raise; end if;
+    raise notice 'PASS an empty office can be deleted; an office in use cannot';
   end;
 end $$;
 reset role;
