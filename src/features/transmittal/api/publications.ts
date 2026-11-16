@@ -39,3 +39,9 @@ export async function publishWeek(a: { title: string; covering: string; week: nu
 export async function deletePublication(id: string) {
   must(await supabase().from(T.publications).delete().eq('id', id));
 }
+
+/** Ids of every record that is already in a weekly list (a record is published once only). */
+export async function listPublishedEntryIds(): Promise<Set<string>> {
+  const rows = must(await supabase().from(T.publicationEntries).select('entry_id').limit(50000)) as { entry_id: string }[];
+  return new Set(rows.map((r) => r.entry_id));
+}

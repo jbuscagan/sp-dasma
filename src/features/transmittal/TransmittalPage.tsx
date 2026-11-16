@@ -3,7 +3,8 @@
 //   encode in the last row → Submit (done for the day) → Transmit (final, locked; shows in Published (All)).
 // The checkbox = received by this office (its name appears in "Received by", saved) and also picks the rows to Generate / Transmit.
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Modal, PageHeader } from '@/components/ui';
+import { Alert, Button, Modal, PageHeader, Tabs } from '@/components/ui';
+import { AllRecords } from '@/features/history/published/AllRecords';
 import { GenerateButton } from '@/components/ui/GenerateButton';
 import { Icon } from '@/components/ui/Icon';
 import { useSession } from '@/features/auth/session';
@@ -30,7 +31,7 @@ const VIEWS: [View, string][] = [
 
 export function TransmittalPage({ type }: { type: TransmittalType }) {
   const cfg = TYPES[type];
-  const { committee, profile } = useSession();
+  const { committee, profile, isAdmin } = useSession();
   const live = useLive(
     async () => {
       const [entries, tx] = await Promise.all([
@@ -56,6 +57,7 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
   const [confirm, setConfirm] = useState<'submit' | 'transmit' | 'deleteAll' | null>(null);
   // Transmit asks for the week. One transmittal per week: transmitting again in that week adds to it.
   const [weekOf, setWeekOf] = useState(todayIso());
+  const [section, setSection] = useState<'personal' | 'shared'>('personal');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -182,6 +184,21 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
     }
   };
 
+  // Personal = my office's sheet. Shared = what every office submitted / transmitted in this category
+  // (the Personal category is private, so it has no Shared tab).
+  const sectionTabs = type !== 'personal' && (
+    <Tabs<'personal' | 'shared'> value={section} onChange={setSection} items={[['personal', 'Personal'], ['shared', 'Shared']]} />
+  );
+  if (section === 'shared' && type !== 'personal') {
+    return (
+      <>
+        <PageHeader title={cfg.label} subtitle="Shared — submitted and transmitted requests of every office" />
+        {sectionTabs}
+        <AllRecords key={type} canPublish={isAdmin || !!committee?.can_edit_published} fixedType={type} allowPublish={false} />
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader
@@ -198,6 +215,7 @@ export function TransmittalPage({ type }: { type: TransmittalType }) {
           </>
         }
       />
+      {sectionTabs}
 
       {notice && (
         <div className="mb-3">

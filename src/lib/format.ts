@@ -69,6 +69,7 @@ export function parseDateRange(text: string): { from: string; to: string } {
 export function officeShortName(c: { name: string; spm_name?: string | null; spm_full_name?: string | null } | null | undefined): string {
   if (!c) return '';
   if (c.spm_full_name?.trim()) return `SPM ${c.spm_full_name.trim()}`;
-  if (c.spm_name?.trim()) return `SPM ${c.spm_name.trim()}`;
-  return c.name.replace(/^\s*office\s+of\s+(the\s+)?/i, '').trim() || c.name;
+  const fromOffice = c.name.replace(/^\s*office\s+of\s+(the\s+)?/i, '').trim();
+  if (fromOffice) return fromOffice;
+  return c.spm_name?.trim() ? `SPM ${c.spm_name.trim()}` : c.name;
 }

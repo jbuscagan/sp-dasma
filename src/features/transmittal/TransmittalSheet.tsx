@@ -90,6 +90,7 @@ export function TransmittalSheet({
   const missingOf = (r: Row) => (nameKeys.some((k) => (r[k] ?? '').trim()) ? [] : nameKeys.filter((k) => fields.find((f) => f.key === k)?.required));
   const emptyRequired = (e: Entry, f: FieldDef) => !!f.required && !String((e as unknown as Record<string, unknown>)[f.key] ?? '').trim();
 
+  const isDropdown = (f: FieldDef) => f.kind === 'organization' || f.kind === 'barangay' || f.kind === 'choice';
   const focusKey = (key: string) => setTimeout(() => table.current?.querySelector<HTMLElement>(`[data-cell="${key}"]`)?.focus(), 30);
   // Existing rows are "r-<row>-<col>", empty rows are "new-<row>-<col>".
   const focus = (row: number, col: number) => focusKey(row < rows.length ? `r-${row}-${col}` : `new-${row - rows.length}-${col}`);
@@ -344,7 +345,9 @@ export function TransmittalSheet({
                             if (ev.key === 'Enter') {
                               ev.preventDefault();
                               (ev.target as HTMLElement).blur();
-                              focus(ri + 1, ci);
+                              // dropdown cells: Enter keeps the choice and goes to the next cell; others go down a row
+                              if (isDropdown(f) && ci + 1 < fields.length) focus(ri, ci + 1);
+                              else focus(ri + 1, ci);
                             }
                           },
                         })
@@ -404,6 +407,12 @@ export function TransmittalSheet({
                     onKeyDown: (ev) => {
                       if (ev.key !== 'Enter') return;
                       ev.preventDefault();
+                      // dropdown cells: Enter keeps the choice and moves to the next cell (the row is saved
+                      // with Enter in any other cell, e.g. Contact number or Date of event)
+                      if (isDropdown(f) && ci + 1 < fields.length) {
+                        focusKey(`new-${pi}-${ci + 1}`);
+                        return;
+                      }
                       if (isEmpty(r)) return;
                       savePending([pi]);
                     },

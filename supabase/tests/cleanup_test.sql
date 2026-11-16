@@ -25,6 +25,8 @@ do $$ begin
      and (select barangay from entry_list where solicitor_name = 'Brgy As Org') = 'Salitran II', 'FAIL barangay stored as organization';
   raise notice 'PASS existing mixed organization/barangay records were cleaned up';
   assert (select count(*) from transmittals where type = 'medical' and week_no = 30) = 1, 'FAIL duplicate weeks not merged';
+  assert not exists (select 1 from committees where btrim(name) = ''), 'FAIL blank office left';
+  raise notice 'PASS the blank (unused) office was removed';
   raise notice 'PASS duplicate transmittals of the same week were merged into one';
 end $$;
 
@@ -52,6 +54,7 @@ reset role;
 
 -- weekly list keeps only records inside its dates
 update entries set date_received = '2026-11-02' where solicitor_name = 'Ana';
+delete from publications;  -- start without weekly lists (a record is published once only)
 select pg_temp.as_user('cccccccc-0000-0000-0000-000000000000');
 do $$ declare p uuid; n int; begin
   select count(*) into n from entries where status = 'transmitted';
@@ -86,6 +89,10 @@ do $$ declare v uuid; nb int; no int; n int; begin
   update committees set spm_full_name = 'Robin Chester J. Cantimbuhan' where id = '11111111-1111-1111-1111-111111111111';
   select id into v from entry_list where received_committee_id = '11111111-1111-1111-1111-111111111111' limit 1;
   assert (select received_by from entry_list where id = v) = 'SPM Robin Chester J. Cantimbuhan', 'FAIL full name';
+  update committees set spm_full_name = null where id = '11111111-1111-1111-1111-111111111111';
+  assert (select received_by from entry_list where id = v) not like 'Office of%' and (select received_by from entry_list where id = v) like 'SPM %', 'FAIL fallback';
+  raise notice 'PASS without a full name it uses the office name: %', (select received_by from entry_list where id = v);
+  update committees set spm_full_name = 'Robin Chester J. Cantimbuhan' where id = '11111111-1111-1111-1111-111111111111';
   raise notice 'PASS received by shows the full name: %', (select received_by from entry_list where id = v);
 
   insert into barangays (name) values ('Not Really A Barangay');
@@ -149,6 +156,13 @@ do $$ declare p uuid; begin
   p := publish_week('Week 47', '', 47, '2026-11-15', '2026-11-21', array(select id from entries where solicitor_name in ('Week Mon', 'Week Wed')), 'received');
   assert (select count(*) from publication_entries where publication_id = p) = 1, 'FAIL other week included (by date received)';
   raise notice 'PASS publishing by date received leaves out records of other weeks';
+  begin
+    perform publish_week('Week 47 again', '', 47, '2026-11-15', '2026-11-21', array(select id from entries where solicitor_name in ('Week Mon', 'Week Wed')), 'received');
+    raise exception 'FAIL published twice';
+  exception when raise_exception then
+    if sqlerrm like 'FAIL%' then raise; end if;
+    raise notice 'PASS a record that is already in a weekly list is not published again';
+  end;
   delete from publications where id = p;
   assert not exists (select 1 from publications where id = p), 'FAIL unpublish';
   raise notice 'PASS an office allowed to publish can unpublish';
@@ -156,7 +170,7 @@ end $$;
 reset role;
 select pg_temp.as_user('aaaaaaaa-0000-0000-0000-000000000000');
 do $$ declare c uuid; begin
-  insert into committees (name) values ('') returning id into c;
+  insert into committees (name) values ('Temporary Office') returning id into c;
   perform remove_office(c);
   assert not exists (select 1 from committees where id = c), 'FAIL empty office not deleted';
   begin

@@ -1084,9 +1084,9 @@ CREATE OR REPLACE FUNCTION public.office_short_name(c public.committees) RETURNS
     LANGUAGE sql IMMUTABLE
     AS $$
   select coalesce(
-    'SPM ' || nullif(btrim(c.spm_full_name), ''),
+    'SPM ' || nullif(btrim(c.spm_full_name), ''),                                          -- SPM Robin Chester J. Cantimbuhan
+    nullif(btrim(regexp_replace(c.name, '^\s*office\s+of\s+(the\s+)?', '', 'i')), ''),  -- "Office of SPM Robin Cantimbuhan" → SPM Robin Cantimbuhan
     'SPM ' || nullif(btrim(c.spm_name), ''),
-    nullif(btrim(regexp_replace(c.name, '^\s*office\s+of\s+(the\s+)?', '', 'i')), ''),
     c.name);
 $$;
 
@@ -1145,9 +1145,10 @@ begin
     from unnest(p_entry_ids) with ordinality as x(id, ord)
     join entries e on e.id = x.id and e.status = 'transmitted'
     left join transmittals t on t.id = e.transmittal_id
-   where case when p_basis = 'transmitted' then t.transmitted_on else e.date_received end between p_from and p_to;
+   where case when p_basis = 'transmitted' then t.transmitted_on else e.date_received end between p_from and p_to
+     and not exists (select 1 from publication_entries pe where pe.entry_id = e.id and pe.publication_id <> v_id); -- published once only
   if not exists (select 1 from publication_entries where publication_id = v_id) then
-    raise exception 'None of these records falls between % and %.', p_from, p_to;
+    raise exception 'None of these records can be published: they are outside % – % or were already published.', p_from, p_to;
   end if;
   perform public.log_publication(v_id);
   return v_id;
@@ -1903,6 +1904,15 @@ declare
   s record;
   v_org uuid;
 begin
+  -- offices saved without a name: removed when nothing uses them, otherwise named so they can be fixed
+  delete from public.committees c
+   where btrim(coalesce(c.name, '')) = ''
+     and not exists (select 1 from public.profiles p where p.committee_id = c.id)
+     and not exists (select 1 from public.entries e where e.committee_id = c.id)
+     and not exists (select 1 from public.transmittals t where t.committee_id = c.id)
+     and not exists (select 1 from public.employees m where m.committee_id = c.id);
+  update public.committees set name = 'Unnamed office' where btrim(coalesce(name, '')) = '';
+
   -- one transmittal per office, type and week (older versions made a new one at every Transmit)
   for r in select t.id, k.keep from transmittals t
              join lateral (select x.id as keep from transmittals x
@@ -1942,3 +1952,9 @@ begin
 end $tidy$;
 
 alter table public.entries enable trigger user;
+
+-- an office always has a name
+DO $c$ BEGIN
+  ALTER TABLE public.committees ADD CONSTRAINT committees_name_not_blank CHECK (btrim(name) <> '');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $c$;

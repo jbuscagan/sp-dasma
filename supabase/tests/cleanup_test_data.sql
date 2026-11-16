@@ -13,3 +13,6 @@ alter table entries enable trigger user;
 insert into transmittals (committee_id, type, code, week_no, transmitted_on) values
   ('11111111-1111-1111-1111-111111111111', 'medical', 'SPMRC-MA-030', 30, '2026-07-20'),
   ('11111111-1111-1111-1111-111111111111', 'medical', 'SPMRC-MA-030', 30, '2026-07-22');
+-- an office saved without a name (older versions allowed it)
+alter table committees drop constraint if exists committees_name_not_blank;
+insert into committees (name) values ('');

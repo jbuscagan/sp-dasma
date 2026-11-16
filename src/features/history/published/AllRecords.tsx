@@ -11,7 +11,7 @@ import { useLive } from '@/hooks/useLive';
 import { useReorder } from '@/hooks/useReorder';
 import { fmtHeaderDate, fmtLong, todayIso } from '@/lib/dates';
 import type { Entry, TransmittalType } from '@/lib/types';
-import { getEntryOrder, listTransmittals, setEntryOrder, setEntryStatus } from '@/features/transmittal/api';
+import { getEntryOrder, listPublishedEntryIds, listTransmittals, setEntryOrder, setEntryStatus } from '@/features/transmittal/api';
 import { TYPE_ORDER, TYPES } from '@/features/transmittal/config';
 import { EntryForm } from '@/features/transmittal/EntryForm';
 import { matches } from '@/features/transmittal/EntryTable';
@@ -23,9 +23,13 @@ import { NOWRAP } from './shared';
 import { ChecksDialog } from './ChecksDialog';
 import { PublishDialog } from './PublishDialog';
 
-export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; onPublished: () => void }) {
+/**
+ * fixedType: show one category only (used as the "Shared" tab of a Transmittal page).
+ * allowPublish = false hides the Publish button there (publishing is done in Published (All)).
+ */
+export function AllRecords({ canPublish, onPublished, fixedType, allowPublish = true }: { canPublish: boolean; onPublished?: () => void; fixedType?: TransmittalType; allowPublish?: boolean }) {
   const { committee, committees, committeeName, isAdmin } = useSession();
-  const [type, setType] = useState<TransmittalType | ''>('');
+  const [type, setType] = useState<TransmittalType | ''>(fixedType ?? '');
   const [office, setOffice] = useState('');
   const [org, setOrg] = useState('');
   const [from, setFrom] = useState('');
@@ -45,6 +49,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
     [type, office, from, to],
   );
   const order = useLive(getEntryOrder, ['entry_order']);
+  const published = useLive(listPublishedEntryIds, ['publication_entries', 'publications']);
   const tx = useLive(() => listTransmittals(), ['transmittals']);
   const txDate = useMemo(() => new Map((tx.data ?? []).map((t) => [t.id, t.transmitted_on])), [tx.data]);
   const revisionOpen = useMemo(() => new Set((tx.data ?? []).filter((t) => t.revision_open).map((t) => t.id)), [tx.data]);
@@ -63,7 +68,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
 
   const columns = useMemo(() => combinedColumns(committeeName), [committeeName]);
   // On screen: no TYPE column and no type under the office (it repeated on every row).
-  const screenColumns = useMemo(() => columns.filter((c) => c.label !== 'TYPE'), [columns]);
+  const screenColumns = useMemo(() => combinedColumns(committeeName, false).filter((c) => c.label !== 'TYPE'), [committeeName]);
   // Report: #, date received, name, organization / barangay, purpose, contact no., date of event, received by (no office / type)
   const reportColumns = useMemo(() => combinedColumns(committeeName, false).filter((c) => c.label !== 'TYPE'), [committeeName]);
   const issues = useMemo(() => findIssues(entries), [entries]);
@@ -115,12 +120,14 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
       {(loadError || error) && <div className="mb-3"><Alert kind="error">{loadError || error}</Alert></div>}
 
       <div className="card mb-4 grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-7">
-        <Field label="Type">
-          <select className="input" value={type} onChange={(e) => setType(e.target.value as TransmittalType | '')}>
-            <option value="">All types</option>
-            {TYPE_ORDER.filter((t) => t !== 'personal').map((t) => <option key={t} value={t}>{TYPES[t].label}</option>)}
-          </select>
-        </Field>
+        {!fixedType && (
+          <Field label="Type">
+            <select className="input" value={type} onChange={(e) => setType(e.target.value as TransmittalType | '')}>
+              <option value="">All types</option>
+              {TYPE_ORDER.filter((t) => t !== 'personal').map((t) => <option key={t} value={t}>{TYPES[t].label}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Office">
           <select className="input" value={office} onChange={(e) => setOffice(e.target.value)}>
             <option value="">All offices</option>
@@ -159,7 +166,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
           )}
           <div className="ml-auto flex gap-2">
             <GenerateButton variant="secondary" disabled={!rows.length} count={chosen.length} onClick={() => setExporting(true)} />
-            {canPublish && (
+            {canPublish && allowPublish && (
               <Button disabled={!rows.length} onClick={() => setPublishing(true)} title="Publish the weekly combined list of all offices">
                 <Icon name="globe" size={16} />Publish
               </Button>
@@ -196,14 +203,7 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
                     }`}
                   >
                     <td className="px-1.5 py-2 text-center"><input type="checkbox" className="h-4 w-4 accent-brand-600" aria-label="Select row" checked={selected.has(e.id)} onChange={() => toggle(e.id)} /></td>
-                    <td className="border-l border-line px-1.5 py-1.5 text-center tabular-nums text-muted">
-                      {i + 1}
-                      {e.status === 'submitted' ? (
-                        <span className="mt-0.5 block text-[10px] font-semibold leading-tight text-blue-600" title="Submitted — not yet transmitted (still editable)">Submitted</span>
-                      ) : (
-                        <span className="mt-0.5 block text-muted" title="Transmitted (locked)"><Icon name="lock" size={11} className="mx-auto" /></span>
-                      )}
-                    </td>
+                    <td className="border-l border-line px-1.5 py-1.5 text-center tabular-nums text-muted">{i + 1}</td>
                     {screenColumns.map((c) => <td key={c.label} className={`${NOWRAP.test(c.label) ? 'whitespace-nowrap' : 'whitespace-pre-line'} border-l border-line px-1.5 py-1.5`}>{c.value(e)}</td>)}
                     <td className="break-words border-l border-line px-1.5 py-1.5 text-xs font-semibold text-brand-700" title={e.received_at ? fmtLong(e.received_at) : undefined}>{e.received_by ?? ''}</td>
                     <td className="border-l border-line px-1 py-1.5 text-center">
@@ -272,15 +272,16 @@ export function AllRecords({ canPublish, onPublished }: { canPublish: boolean; o
       />
       {publishing && (
         <PublishDialog
-          rows={targetRows.filter((e) => e.status === 'transmitted')}
+          rows={targetRows.filter((e) => e.status === 'transmitted' && !published.data?.has(e.id))}
           leftOut={targetRows.filter((e) => e.status !== 'transmitted').length}
+          alreadyPublished={targetRows.filter((e) => e.status === 'transmitted' && published.data?.has(e.id)).length}
           selectedCount={chosen.length}
           transmittedOn={(e) => (e.transmittal_id ? txDate.get(e.transmittal_id) ?? null : null)}
           onClose={() => setPublishing(false)}
           onDone={() => {
             setPublishing(false);
             setSelected(new Set());
-            onPublished();
+            onPublished?.();
           }}
         />
       )}

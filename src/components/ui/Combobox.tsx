@@ -181,6 +181,7 @@ export function Combobox<T>({
             if (e.key === 'Enter' && matches[active] && matches[active].value !== value && (typed ? value.trim() : true)) {
               e.preventDefault();
               pick(matches[active]);
+              onKeyDown?.(e); // the table moves to the next cell
               return;
             }
           }
